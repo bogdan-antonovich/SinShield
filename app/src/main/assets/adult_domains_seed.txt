@@ -1,0 +1,33 @@
+# SinShield offline starter list.
+# Format: one domain per line. The app replaces this seed with StevenBlack's maintained
+# porn-only hosts list after a validated update from:
+# https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts
+# Project: https://github.com/StevenBlack/hosts
+
+adultfriendfinder.com
+beeg.com
+brazzers.com
+chaturbate.com
+faphouse.com
+fansly.com
+livejasmin.com
+manyvids.com
+motherless.com
+onlyfans.com
+phncdn.com
+phprcdn.com
+porndig.com
+pornhub.com
+pornpics.com
+redgifs.com
+redtube.com
+spankbang.com
+stripchat.com
+thumbzilla.com
+tnaflix.com
+tube8.com
+txxx.com
+xhamster.com
+xnxx.com
+xvideos.com
+youporn.com
