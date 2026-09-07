@@ -5,6 +5,7 @@ import android.util.Log
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
+import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint
 import org.opencv.core.Rect
@@ -23,7 +24,11 @@ internal class OpenCvMediaRegionDetector(
     private var initializationAttempted = false
     private var available = false
 
-    fun detect(bitmap: Bitmap, inferInstagramGrid: Boolean = false): List<DetectionRegion> {
+    fun detect(
+        bitmap: Bitmap,
+        inferInstagramGrid: Boolean = false,
+        inferInstagramPost: Boolean = false
+    ): List<DetectionRegion> {
         if (!ensureAvailable()) return emptyList()
 
         val source = Mat()
@@ -109,13 +114,38 @@ internal class OpenCvMediaRegionDetector(
                 )
             }
 
-            val instagramGridRectangles = if (inferInstagramGrid || config.inferInstagramLayouts) {
-                InstagramGridRegionAssembler.assemble(
+            val instagramGridRectangles = if (inferInstagramGrid) {
+                val transitionRectangles = InstagramGridTransitionAssembler.assemble(
+                    imageWidth = small.width(),
+                    imageHeight = small.height(),
+                    rowTransitions = adjacentTransitionScores(gray, horizontal = true),
+                    columnTransitions = adjacentTransitionScores(gray, horizontal = false),
+                    maxResults = config.maxRegions,
+                    // Instagram thumbnails are ~4:5, so clamp transition cells to that aspect. The
+                    // DEFAULT config (X's flow) passes no clamp and is therefore unchanged.
+                    maxCellAspectRatio = if (config.inferInstagramLayouts) {
+                        INSTAGRAM_GRID_CELL_MAX_ASPECT
+                    } else {
+                        Double.MAX_VALUE
+                    }
+                )
+                val houghRectangles = InstagramGridRegionAssembler.assemble(
                     imageWidth = small.width(),
                     imageHeight = small.height(),
                     rawSegments = detectedLineSegments,
                     maxResults = config.maxRegions
-                ).map { rectangle ->
+                )
+                // Instagram: prefer the structurally validated Hough cells (full-width row
+                // separators plus three real column dividers) so a profile header cannot anchor the
+                // grid; the transition cells only fill gaps they leave, and Hough wins the planner's
+                // de-duplication. The DEFAULT config (X's flow) keeps its original ordering so its
+                // behavior is byte-for-byte unchanged.
+                val orderedGridRectangles = if (config.inferInstagramLayouts) {
+                    houghRectangles + transitionRectangles
+                } else {
+                    transitionRectangles + houghRectangles
+                }
+                orderedGridRectangles.map { rectangle ->
                     PixelCandidate(
                         bounds = Rect(
                             rectangle.left.toInt(),
@@ -131,14 +161,19 @@ internal class OpenCvMediaRegionDetector(
                 emptyList()
             }
 
-            val instagramPostRectangles = if (
-                config.inferInstagramLayouts && instagramGridRectangles.isEmpty()
-            ) {
-                InstagramPostRegionAssembler.assemble(
+            val instagramPostRectangles = if (config.inferInstagramLayouts && inferInstagramPost) {
+                val transitionRectangles = InstagramPostTransitionAssembler.assemble(
+                    imageWidth = small.width(),
+                    imageHeight = small.height(),
+                    rowTransitions = adjacentTransitionScores(gray, horizontal = true),
+                    sustainedRowTransitions = sustainedRowTransitionScores(gray)
+                )
+                val houghRectangles = InstagramPostRegionAssembler.assemble(
                     imageWidth = small.width(),
                     imageHeight = small.height(),
                     rawSegments = detectedLineSegments
-                ).map { rectangle ->
+                )
+                (transitionRectangles + houghRectangles).map { rectangle ->
                     PixelCandidate(
                         bounds = Rect(
                             rectangle.left.toInt(),
@@ -324,6 +359,85 @@ internal class OpenCvMediaRegionDetector(
         return TextEdgePattern.isLikelyPlainText(rowEdgeCounts, bounds.width)
     }
 
+    /** Fraction of pixels changing across each neighboring row/column boundary. */
+    private fun adjacentTransitionScores(gray: Mat, horizontal: Boolean): DoubleArray {
+        val difference = Mat()
+        val significantDifference = Mat()
+        val reduced = Mat()
+        val first = if (horizontal) {
+            gray.rowRange(1, gray.rows())
+        } else {
+            gray.colRange(1, gray.cols())
+        }
+        val second = if (horizontal) {
+            gray.rowRange(0, gray.rows() - 1)
+        } else {
+            gray.colRange(0, gray.cols() - 1)
+        }
+        return try {
+            Core.absdiff(first, second, difference)
+            // A boundary should change a meaningful fraction of the row/column. Averaging raw
+            // deltas lets one high-contrast object masquerade as a gallery divider; measuring
+            // coverage requires the transition to be distributed across the screenshot.
+            Imgproc.threshold(
+                difference,
+                significantDifference,
+                MIN_ADJACENT_PIXEL_DELTA,
+                255.0,
+                Imgproc.THRESH_BINARY
+            )
+            Core.reduce(
+                significantDifference,
+                reduced,
+                if (horizontal) 1 else 0,
+                Core.REDUCE_AVG,
+                CvType.CV_32F
+            )
+            val count = if (horizontal) reduced.rows() else reduced.cols()
+            DoubleArray(count) { index ->
+                reduced.get(if (horizontal) index else 0, if (horizontal) 0 else index)[0]
+            }
+        } finally {
+            first.release()
+            second.release()
+            difference.release()
+            significantDifference.release()
+            reduced.release()
+        }
+    }
+
+    /** Mean per-column change between stable pixel bands on opposite sides of each row. */
+    private fun sustainedRowTransitionScores(gray: Mat): DoubleArray {
+        val smoothed = Mat()
+        val difference = Mat()
+        val reduced = Mat()
+        val result = DoubleArray(gray.rows() - 1)
+        if (gray.rows() <= SUSTAINED_TRANSITION_SPAN * 2) return result
+
+        Imgproc.blur(
+            gray,
+            smoothed,
+            Size(1.0, SUSTAINED_TRANSITION_BAND.toDouble())
+        )
+        val upper = smoothed.rowRange(0, smoothed.rows() - SUSTAINED_TRANSITION_SPAN * 2)
+        val lower = smoothed.rowRange(SUSTAINED_TRANSITION_SPAN * 2, smoothed.rows())
+        return try {
+            Core.absdiff(upper, lower, difference)
+            Core.reduce(difference, reduced, 1, Core.REDUCE_AVG, CvType.CV_32F)
+            for (row in 0 until reduced.rows()) {
+                val boundary = row + SUSTAINED_TRANSITION_SPAN
+                if (boundary in result.indices) result[boundary] = reduced.get(row, 0)[0]
+            }
+            result
+        } finally {
+            upper.release()
+            lower.release()
+            smoothed.release()
+            difference.release()
+            reduced.release()
+        }
+    }
+
     private fun hasPlausibleGeometry(bounds: Rect, imageWidth: Int, imageHeight: Int): Boolean {
         val widthRatio = bounds.width.toDouble() / imageWidth
         val heightRatio = bounds.height.toDouble() / imageHeight
@@ -441,6 +555,11 @@ internal class OpenCvMediaRegionDetector(
         private const val BLUR_SIZE = 5.0
         private const val CANNY_LOW = 40.0
         private const val CANNY_HIGH = 120.0
+        // Instagram profile/Explore thumbnails are ~4:5 portrait; a small margin absorbs the gutter.
+        private const val INSTAGRAM_GRID_CELL_MAX_ASPECT = 1.28
+        private const val MIN_ADJACENT_PIXEL_DELTA = 15.0
+        private const val SUSTAINED_TRANSITION_BAND = 15
+        private const val SUSTAINED_TRANSITION_SPAN = 12
         private const val TEXTURE_WINDOW = 17.0
         private const val MIN_LOCAL_EDGE_DENSITY = 8.0
         private const val TEXTURE_BOUNDS_PADDING = 10

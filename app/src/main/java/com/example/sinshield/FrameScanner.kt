@@ -57,7 +57,9 @@ internal class FrameScanner(
 
     private val analysisFlows = AppAnalysisFlowRegistry(service.applicationContext)
     private val modelDebugWriter =
-        if (service.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+        if (ModelDebugDumps.ENABLED &&
+            service.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        ) {
             ModelAnalysisDebugWriter(service.applicationContext)
         } else {
             null
@@ -458,6 +460,7 @@ internal class FrameScanner(
         lastFrameHash = analysis.frameHash
         if (contentChangedSignificantly) resetAdaptiveState(keepLastHash = true)
 
+        val timing = ScanTiming(context.eventTimestamp, screenshotTimestamp, durationMs)
         when (analysis.verdict) {
             ContentVerdict.SAFE -> {
                 if (ShieldedApp.forPackage(context.packageName) != null && host.closingAppInProgress) {
@@ -470,16 +473,18 @@ internal class FrameScanner(
                 noteSafeFrame(contentChangedSignificantly)
                 scheduleAfterCompletion()
             }
-            ContentVerdict.SUSPICIOUS -> handleSuspicious(context, analysis, diagnostics)
+            ContentVerdict.SUSPICIOUS -> handleSuspicious(context, analysis, diagnostics, timing)
             ContentVerdict.EXPLICIT,
-            ContentVerdict.SEMI_NUDE -> handleFinalUnsafe(context, analysis, diagnostics = diagnostics)
+            ContentVerdict.SEMI_NUDE ->
+                handleFinalUnsafe(context, analysis, diagnostics = diagnostics, timing = timing)
         }
     }
 
     private fun handleSuspicious(
         context: ScanContext,
         analysis: FrameAnalysis,
-        diagnostics: String
+        diagnostics: String,
+        timing: ScanTiming
     ) {
         val suspectedFinalVerdict = analysis.suspectedFinalVerdict
         val prior = confirmation
@@ -500,7 +505,7 @@ internal class FrameScanner(
         }
         if (confirmations >= requiredConfirmations) {
             confirmation = null
-            handleFinalUnsafe(context, analysis, suspectedFinalVerdict, diagnostics)
+            handleFinalUnsafe(context, analysis, suspectedFinalVerdict, diagnostics, timing)
             return
         }
 
@@ -511,7 +516,7 @@ internal class FrameScanner(
             suspectedVerdict = suspectedFinalVerdict,
             confirmations = confirmations
         )
-        showProvisionalShield(context, analysis, suspectedFinalVerdict, diagnostics)
+        showProvisionalShield(context, analysis, suspectedFinalVerdict, diagnostics, timing)
         scanScheduler.resetToActiveInterval()
         Log.i(
             TAG,
@@ -530,7 +535,8 @@ internal class FrameScanner(
         context: ScanContext,
         analysis: FrameAnalysis,
         verdict: ContentVerdict,
-        diagnostics: String
+        diagnostics: String,
+        timing: ScanTiming
     ) {
         if (verdict == ContentVerdict.SEMI_NUDE &&
             !context.detectionSettings.blockSuggestive
@@ -554,6 +560,7 @@ internal class FrameScanner(
                     mode,
                     appBlockActions
                 )
+                logBanTiming(context, verdict, timing, provisional = true, mode = mode)
             }
         } else {
             overlays.showLocalizedBlockingOverlays(
@@ -562,6 +569,7 @@ internal class FrameScanner(
                 analysis.localized.boxes,
                 verdict
             )
+            logBanTiming(context, verdict, timing, provisional = true)
         }
     }
 
@@ -569,7 +577,8 @@ internal class FrameScanner(
         context: ScanContext,
         analysis: FrameAnalysis,
         verdict: ContentVerdict = analysis.verdict,
-        diagnostics: String
+        diagnostics: String,
+        timing: ScanTiming
     ) {
         if (verdict == ContentVerdict.SEMI_NUDE &&
             !context.detectionSettings.blockSuggestive
@@ -611,6 +620,7 @@ internal class FrameScanner(
             } else {
                 preparePendingFeedback(context, analysis, incident, verdict, diagnostics)
                 overlays.showAppBlockingOverlay(shieldedApp, incident, verdict, mode, appBlockActions)
+                logBanTiming(context, verdict, timing, provisional = false, mode = mode)
             }
         } else {
             overlays.showLocalizedBlockingOverlays(
@@ -619,6 +629,7 @@ internal class FrameScanner(
                 analysis.localized.boxes,
                 verdict
             )
+            logBanTiming(context, verdict, timing, provisional = false)
         }
         scheduleAfterCompletion()
     }
@@ -645,6 +656,36 @@ internal class FrameScanner(
                 )
             )
         }
+    }
+
+    /**
+     * One release-safe line per shown block, measuring the visible→blocked latency so the pipeline
+     * can be timed on a production build without the debuggable-only image dumps. Every point stamp
+     * is uptime millis — the same domain as eventTs/screenshotTs — so the parts sum to the total:
+     * `eventToCapture` (debounce + cooldown + capture queueing) + `captureToBlock` (screenshot
+     * delivery + inference + main-thread hop + overlay inflation) = `total`. `inferenceMs` is the
+     * model-only slice inside captureToBlock. A `provisional` line is a cover shown before its
+     * confirmation scan; the matching `provisional=false` line follows when the block is finalized.
+     */
+    private fun logBanTiming(
+        context: ScanContext,
+        verdict: ContentVerdict,
+        timing: ScanTiming,
+        provisional: Boolean,
+        mode: ShieldedScreenMode? = null
+    ) {
+        val blockShownAt = SystemClock.uptimeMillis()
+        val eventToCaptureMs = timing.screenshotTimestamp - timing.eventTimestamp
+        val captureToBlockMs = blockShownAt - timing.screenshotTimestamp
+        val totalMs = blockShownAt - timing.eventTimestamp
+        Log.i(
+            TAG,
+            "BAN pkg=${context.packageName} verdict=$verdict " +
+                (mode?.let { "mode=$it " } ?: "") +
+                (if (provisional) "provisional=true " else "") +
+                "eventToCaptureMs=$eventToCaptureMs inferenceMs=${timing.inferenceMs} " +
+                "captureToBlockMs=$captureToBlockMs totalMs=$totalMs"
+        )
     }
 
     private fun encodeFeedbackFrame(bitmap: Bitmap): ByteArray {
@@ -741,6 +782,13 @@ private data class ScanContext(
     val knownSafeFrameHash: Long?,
     val protectionLevel: ProtectionLevel,
     val detectionSettings: DetectionSettings
+)
+
+/** The three uptime-millis stamps [logBanTiming] needs, carried from completion to the show site. */
+private data class ScanTiming(
+    val eventTimestamp: Long,
+    val screenshotTimestamp: Long,
+    val inferenceMs: Long
 )
 
 private data class PendingFeedback(

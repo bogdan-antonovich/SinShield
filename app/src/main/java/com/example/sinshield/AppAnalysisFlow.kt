@@ -67,9 +67,16 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
         modelAsset = CLASSIFIER_MODEL_ASSET,
         detectorConfig = OpenCvMediaRegionDetector.Config.INSTAGRAM,
         regionPlanner = InstagramLocalizedRegionPlanner,
-        stopAfterFirstActionable = false
+        // Instagram draws a full-screen block, not per-region covers, so one actionable region is
+        // enough to decide the frame — stop scoring the rest of the grid as soon as it is found.
+        stopAfterFirstActionable = true,
+        saveFinalRegionMap = true
     )
     private val finalizer = AnalysisFinalizer(CandidateVerifier(context, VERIFIER_MODEL_ASSET))
+
+    // Lets the Instagram flow run the fast whole-screen classifier alongside the slower OpenCV
+    // region detection instead of one after the other.
+    private val instagramWholeScreenExecutor = Executors.newSingleThreadExecutor()
 
     private val xFlow: AppAnalysisFlow = XAnalysisFlow(
         fullScreenAnalyzer,
@@ -79,7 +86,8 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     private val instagramFlow: AppAnalysisFlow = InstagramAnalysisFlow(
         fullScreenAnalyzer,
         instagramLocalizedAnalyzer,
-        finalizer
+        finalizer,
+        instagramWholeScreenExecutor
     )
     private val redditFlow: AppAnalysisFlow = RedditAnalysisFlow(
         fullScreenAnalyzer,
@@ -109,6 +117,7 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     val warmUpComplete: Boolean get() = finalizer.warmUpComplete
 
     override fun close() {
+        instagramWholeScreenExecutor.shutdown()
         instagramLocalizedAnalyzer.close()
         localizedAnalyzer.close()
         fullScreenAnalyzer.close()
@@ -269,6 +278,25 @@ internal interface LocalizedAnalyzer : AutoCloseable {
         context: LocalizedAnalysisContext = LocalizedAnalysisContext.EMPTY
     ): LocalizedDetection
 
+    /**
+     * Runs only the region-finding half — OpenCV detection plus the app planner. Split out from
+     * [analyze] so a flow can overlap this ~1s CPU pass with the whole-screen classifier and then
+     * decide, from that classifier's verdict, whether the detected crops are worth scoring at all.
+     */
+    fun planRegions(
+        bitmap: Bitmap,
+        debugSession: ModelAnalysisDebugSession?,
+        context: LocalizedAnalysisContext = LocalizedAnalysisContext.EMPTY
+    ): List<DetectionRegion>
+
+    /** Scores the [regions] from [planRegions]; empty input yields [LocalizedDetection.EMPTY]. */
+    fun classifyRegions(
+        bitmap: Bitmap,
+        regions: List<DetectionRegion>,
+        thresholds: DetectionThresholds,
+        debugSession: ModelAnalysisDebugSession?
+    ): LocalizedDetection
+
     override fun close()
 }
 
@@ -310,11 +338,14 @@ internal class AsyncOpenCvLocalizedAnalyzer(
     modelAsset: String,
     detectorConfig: OpenCvMediaRegionDetector.Config = OpenCvMediaRegionDetector.Config.DEFAULT,
     private val regionPlanner: LocalizedAnalysisRegionPlanner = ExactOpenCvRegionPlanner,
-    private val stopAfterFirstActionable: Boolean = true
+    private val stopAfterFirstActionable: Boolean = true,
+    private val saveFinalRegionMap: Boolean = false
 ) : LocalizedAnalyzer {
     private val visualMediaDetector = OpenCvMediaRegionDetector(
         config = detectorConfig,
-        debugWriter = if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+        debugWriter = if (ModelDebugDumps.ENABLED &&
+            context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        ) {
             OpenCvDetectionDebugWriter(context)
         } else {
             null
@@ -332,24 +363,49 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         thresholds: DetectionThresholds,
         debugSession: ModelAnalysisDebugSession?,
         context: LocalizedAnalysisContext
-    ): LocalizedDetection {
-        // The rectangles drawn by the OpenCV debug output are the exact rectangles classified.
+    ): LocalizedDetection = classifyRegions(
+        bitmap,
+        planRegions(bitmap, debugSession, context),
+        thresholds,
+        debugSession
+    )
+
+    override fun planRegions(
+        bitmap: Bitmap,
+        debugSession: ModelAnalysisDebugSession?,
+        context: LocalizedAnalysisContext
+    ): List<DetectionRegion> {
+        // OpenCV rectangles are detector candidates. The app planner below owns the final list;
+        // only the returned regions are cropped, classified, and written as NN-localized.jpg.
         val regionsToAnalyze = regionPlanner.plan(
             bitmapWidth = bitmap.width,
             bitmapHeight = bitmap.height,
             visualRegions = visualMediaDetector.detect(
                 bitmap,
-                inferInstagramGrid = InstagramLocalizedRegionPlanner.isGridSurface(context)
+                inferInstagramGrid = InstagramLocalizedRegionPlanner.isGridSurface(context),
+                inferInstagramPost = InstagramLocalizedRegionPlanner.isPostSurface(context)
             ),
             context = context
         )
-        if (regionsToAnalyze.isEmpty()) return LocalizedDetection.EMPTY
+        if (saveFinalRegionMap) {
+            debugSession?.saveFinalRegionMap(bitmap, regionsToAnalyze)
+        }
+        return regionsToAnalyze
+    }
+
+    override fun classifyRegions(
+        bitmap: Bitmap,
+        regions: List<DetectionRegion>,
+        thresholds: DetectionThresholds,
+        debugSession: ModelAnalysisDebugSession?
+    ): LocalizedDetection {
+        if (regions.isEmpty()) return LocalizedDetection.EMPTY
 
         val aborted = AtomicBoolean(false)
         val completion = ExecutorCompletionService<CompletedRegion>(workers)
         val frameWidth = bitmap.width
         val frameHeight = bitmap.height
-        regionsToAnalyze.forEachIndexed { index, region ->
+        regions.forEachIndexed { index, region ->
             val crop = crop(bitmap, region)
             completion.submit {
                 try {
@@ -380,7 +436,7 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         }
 
         val accumulated = MutableLocalizedDetection()
-        repeat(regionsToAnalyze.size) {
+        repeat(regions.size) {
             val completed = completion.take().get()
             val scores = completed.scores ?: return@repeat
             accumulated.add(completed.region, scores, thresholds)
