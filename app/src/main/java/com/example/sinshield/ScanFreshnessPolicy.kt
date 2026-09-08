@@ -5,7 +5,8 @@ internal object ScanFreshnessPolicy {
     fun shouldDiscard(
         contextStale: Boolean,
         eventArrivedAfterCapture: Boolean,
-        verdict: ContentVerdict
+        verdict: ContentVerdict,
+        allowLateSafeResult: Boolean = false
     ): Boolean = contextStale ||
-        (eventArrivedAfterCapture && verdict == ContentVerdict.SAFE)
+        (eventArrivedAfterCapture && verdict == ContentVerdict.SAFE && !allowLateSafeResult)
 }

@@ -74,6 +74,7 @@ internal class FrameScanner(
     private var pendingFeedback: PendingFeedback? = null
     private var lastDetectionSettings: DetectionSettings? = null
     private var scheduledModelWarmup: Runnable? = null
+    private var postRecoverySafePackage: String? = null
 
     // The scan state machine (single-flight, generations, debounce, adaptive interval) is driven
     // only from the main thread. onBeginScan is guarded so the injected start action never runs
@@ -93,7 +94,8 @@ internal class FrameScanner(
         now = SystemClock::elapsedRealtime,
         canScan = {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                host.isMonitored(host.foregroundPackage)
+                host.isMonitored(host.foregroundPackage) &&
+                !overlays.isRecoveryCooldownActive
         },
         onBeginScan = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) beginScan()
@@ -103,7 +105,15 @@ internal class FrameScanner(
     /** True while a capture/inference flight is outstanding; the event loop reads it to coalesce. */
     val inFlight: Boolean get() = scanScheduler.inFlight
 
+    /** A provisional shield needs exactly one scan after its visual cooldown ends. */
+    val hasPendingConfirmation: Boolean get() = confirmation != null
+
     fun requestScan(delayMs: Long) = scanScheduler.requestScan(delayMs)
+
+    fun requestPostRecoveryScan(packageName: String, delayMs: Long) {
+        postRecoverySafePackage = packageName
+        requestScan(delayMs)
+    }
 
     fun cancelScheduledScan() = scanScheduler.cancelScheduledScan()
 
@@ -197,6 +207,7 @@ internal class FrameScanner(
     @RequiresApi(Build.VERSION_CODES.R)
     private fun beginScan() {
         if (scanScheduler.inFlight) return
+        if (overlays.isRecoveryCooldownActive) return
         host.syncForegroundFromRoot()
         val pkg = host.foregroundPackage ?: return
         if (!host.isMonitored(pkg)) return
@@ -215,6 +226,9 @@ internal class FrameScanner(
         }
         val generation = scanScheduler.startFlightOrDefer() ?: return
         val shieldedApp = ShieldedApp.forPackage(pkg)
+        val allowLateSafeResult = postRecoverySafePackage == pkg &&
+            overlays.appOverlay?.app?.packageName == pkg
+        postRecoverySafePackage = null
         val screenSignals = shieldedApp?.let(collectScreenSignals) ?: ScreenSignals.EMPTY
         val context = ScanContext(
             generation = generation,
@@ -226,7 +240,8 @@ internal class FrameScanner(
             screenSignals = screenSignals,
             knownSafeFrameHash = lastSafeFrameHash,
             protectionLevel = protectionLevel,
-            detectionSettings = detectionSettings
+            detectionSettings = detectionSettings,
+            allowLateSafeResult = allowLateSafeResult
         )
 
         val hiddenForLegacyCapture = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -411,12 +426,14 @@ internal class FrameScanner(
             windowChanged(context.windowId, host.foregroundWindowId)
         // Instagram emits content-change events while media remains visually unchanged. Inference
         // takes over a second on typical devices, so rejecting every result after any such event
-        // starves the blocker indefinitely. A late SAFE result is still retried; a late unsafe
-        // result is conservatively accepted while package and window identity remain current.
+        // starves the blocker indefinitely. Ordinary late SAFE results are retried; the one scan
+        // explicitly requested after a recovery action may clear the matching app's shield. Late
+        // unsafe results remain conservatively accepted while package and window stay current.
         val stale = ScanFreshnessPolicy.shouldDiscard(
             contextStale,
             eventArrivedAfterCapture,
-            analysis.verdict
+            analysis.verdict,
+            context.allowLateSafeResult
         )
 
         val diagnostics =
@@ -443,6 +460,7 @@ internal class FrameScanner(
                 "regionExplicit=${analysis.localized.explicitScore} " +
                 "regionSexy=${analysis.localized.semiNudeScore} " +
                 "inferenceMs=$durationMs stale=$stale eventAfterCapture=$eventArrivedAfterCapture " +
+                "postRecovery=${context.allowLateSafeResult} " +
                 "dedup=${analysis.deduplicated} " +
                 "feedbackSuppressed=${analysis.falsePositiveSuppressed}"
         Log.i(TAG, diagnostics)
@@ -781,7 +799,8 @@ private data class ScanContext(
     val screenSignals: ScreenSignals,
     val knownSafeFrameHash: Long?,
     val protectionLevel: ProtectionLevel,
-    val detectionSettings: DetectionSettings
+    val detectionSettings: DetectionSettings,
+    val allowLateSafeResult: Boolean
 )
 
 /** The three uptime-millis stamps [logBanTiming] needs, carried from completion to the show site. */
@@ -864,9 +883,8 @@ private fun formatWholeScreenScores(scores: FloatArray): String {
 
 /**
  * Renders the box the verifier was pointed at, including its share of the screen. A large area
- * means the subject is a small part of the 384x384 verifier input and its score is diluted.
- * NsfwVerifier expands these bounds by CROP_MARGIN_RATIO before cropping, so the real crop is
- * slightly larger than what this prints.
+ * means the subject is a small part of the 384x384 verifier input and its score may be diluted.
+ * NsfwVerifier uses these exact bounds when creating the verifier input.
  */
 internal fun formatVerifierBox(box: DetectionBox): String {
     val area = (box.right - box.left) * (box.bottom - box.top)

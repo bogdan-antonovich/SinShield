@@ -44,4 +44,28 @@ class ScanFreshnessPolicyTest {
             )
         )
     }
+
+    @Test
+    fun postRecoveryScanCanAcceptLateSafeResult() {
+        assertFalse(
+            ScanFreshnessPolicy.shouldDiscard(
+                contextStale = false,
+                eventArrivedAfterCapture = true,
+                verdict = ContentVerdict.SAFE,
+                allowLateSafeResult = true
+            )
+        )
+    }
+
+    @Test
+    fun postRecoveryScanStillRejectsChangedContext() {
+        assertTrue(
+            ScanFreshnessPolicy.shouldDiscard(
+                contextStale = true,
+                eventArrivedAfterCapture = true,
+                verdict = ContentVerdict.SAFE,
+                allowLateSafeResult = true
+            )
+        )
+    }
 }

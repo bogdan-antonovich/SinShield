@@ -34,6 +34,12 @@ class ShieldAccessibilityService : AccessibilityService() {
 
     private lateinit var overlays: OverlayManager
     private val handler = Handler(Looper.getMainLooper())
+    private val healthHeartbeat = object : Runnable {
+        override fun run() {
+            ProtectionHealthMonitor.recordAccessibilityHeartbeat(this@ShieldAccessibilityService)
+            handler.postDelayed(this, HEALTH_HEARTBEAT_INTERVAL_MS)
+        }
+    }
 
     private var foregroundPackage: String? = null
     private var foregroundWindowId: Int = UNKNOWN_WINDOW_ID
@@ -49,6 +55,13 @@ class ShieldAccessibilityService : AccessibilityService() {
     // The full-screen block's buttons drive recovery, which stays in this service; OverlayManager
     // only inflates the window and forwards clicks here.
     private val appBlockActions = object : OverlayManager.AppBlockActions {
+        override fun onCooldownStarted() = scanner.cancelScheduledScan()
+
+        override fun onCooldownFinished() {
+            // Suspicious results still need one confirmation capture. Final blocks remain idle.
+            if (scanner.hasPendingConfirmation) scanner.requestScan(0L)
+        }
+
         override fun onReturnToFeed(app: ShieldedApp) = recovery.returnToAppFeed(app)
         override fun onPrimaryRecovery(app: ShieldedApp) = recovery.performPrimaryRecoveryAction(app)
         override fun onCloseApp(app: ShieldedApp) = recovery.closeApp(app)
@@ -132,6 +145,8 @@ class ShieldAccessibilityService : AccessibilityService() {
                     get() = this@ShieldAccessibilityService.foregroundWindowId
                 override fun resetAdaptiveState() = scanner.resetAdaptiveState()
                 override fun requestScan(delayMs: Long) = scanner.requestScan(delayMs)
+                override fun requestPostRecoveryScan(packageName: String, delayMs: Long) =
+                    scanner.requestPostRecoveryScan(packageName, delayMs)
                 override fun invalidateInFlightScanResults() = scanner.invalidateInFlightResults()
                 override val scanInFlight: Boolean get() = scanner.inFlight
                 override fun markFramePending() = scanner.markFramePending()
@@ -159,6 +174,8 @@ class ShieldAccessibilityService : AccessibilityService() {
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
         }
         startAsForeground()
+        handler.removeCallbacks(healthHeartbeat)
+        healthHeartbeat.run()
         syncForegroundFromRoot()
         if (foregroundPackage in monitoredPackages) {
             scanner.scheduleConnectedScan()
@@ -176,10 +193,10 @@ class ShieldAccessibilityService : AccessibilityService() {
         val channelId = "sinshield_active"
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(
-            NotificationChannel(channelId, "SinShield", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(channelId, "KillLust", NotificationManager.IMPORTANCE_LOW)
         )
         val notification = Notification.Builder(this, channelId)
-            .setContentTitle("SinShield active")
+            .setContentTitle("KillLust active")
             .setContentText("Monitoring for explicit content")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
@@ -432,6 +449,7 @@ class ShieldAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(healthHeartbeat)
         cancelScheduledScan()
         scanner.cancelModelWarmup()
         clearLocalizedOverlays()
@@ -447,6 +465,7 @@ class ShieldAccessibilityService : AccessibilityService() {
         private const val MAX_ACCESSIBILITY_NODES = 400
         private const val MAX_MEDIA_REGIONS = 4
         private const val MAX_INSTAGRAM_MEDIA_REGIONS = 18
+        private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
         private const val MIN_MEDIA_AREA_PERCENT = 4
         private const val MAX_MEDIA_AREA_PERCENT = 90
         private const val MIN_MEDIA_WIDTH_PERCENT = 25

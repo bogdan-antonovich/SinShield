@@ -49,6 +49,7 @@ internal class RecoveryController(
         val foregroundWindowId: Int
         fun resetAdaptiveState()
         fun requestScan(delayMs: Long)
+        fun requestPostRecoveryScan(packageName: String, delayMs: Long)
         fun invalidateInFlightScanResults()
         val scanInFlight: Boolean
         fun markFramePending()
@@ -672,10 +673,14 @@ internal class RecoveryController(
             {
                 val overlay = overlays.appOverlay ?: return@postDelayed
                 setActionButtonsEnabled(overlay.view, true)
-                overlay.view.findViewById<TextView>(R.id.blocked_explanation).text =
-                    overlays.explanationFor(overlay.app, overlay.mode)
+                overlay.view.findViewById<TextView>(R.id.blocked_explanation).apply {
+                    text = ""
+                    visibility = View.GONE
+                }
                 host.syncForegroundFromRoot()
-                if (host.foregroundPackage == overlay.app.packageName) host.requestScan(0L)
+                if (host.foregroundPackage == overlay.app.packageName) {
+                    host.requestPostRecoveryScan(overlay.app.packageName, 0L)
+                }
             },
             delayMs
         )

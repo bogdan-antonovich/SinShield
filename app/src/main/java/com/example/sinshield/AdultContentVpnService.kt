@@ -98,11 +98,13 @@ class AdultContentVpnService : VpnService() {
             .getOrNull()
         if (tunnel == null) {
             Log.e(TAG, "Android did not establish the VPN interface")
+            ProtectionHealthMonitor.recordVpnFailure(this)
             stopVpn()
             return
         }
 
         isRunning = true
+        ProtectionHealthMonitor.recordVpnRunning(this)
         broadcastState(true)
         worker = Thread(::processPackets, "SinShield-DNS").apply { start() }
         Log.i(TAG, "DNS VPN active with ${matcher.size} blocked domains")
@@ -139,6 +141,12 @@ class AdultContentVpnService : VpnService() {
         } finally {
             runCatching { input.close() }
             runCatching { output.close() }
+            // stopVpn clears the tunnel before interrupting the thread. If it is still present,
+            // the packet loop ended unexpectedly and website protection is no longer functional.
+            if (tunnel != null) {
+                ProtectionHealthMonitor.recordVpnFailure(this)
+                stopVpn()
+            }
         }
     }
 
@@ -250,6 +258,7 @@ class AdultContentVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        ProtectionHealthMonitor.setVpnExpected(this, false)
         stopVpn()
         super.onRevoke()
     }
@@ -285,6 +294,7 @@ class AdultContentVpnService : VpnService() {
             private set
 
         fun start(context: Context) {
+            ProtectionHealthMonitor.setVpnExpected(context, true)
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, AdultContentVpnService::class.java).setAction(ACTION_START)
@@ -292,6 +302,7 @@ class AdultContentVpnService : VpnService() {
         }
 
         fun stop(context: Context) {
+            ProtectionHealthMonitor.setVpnExpected(context, false)
             context.startService(
                 Intent(context, AdultContentVpnService::class.java).setAction(ACTION_STOP)
             )

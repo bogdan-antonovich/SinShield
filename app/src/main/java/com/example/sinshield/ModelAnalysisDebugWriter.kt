@@ -16,12 +16,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
+import androidx.core.graphics.createBitmap
 
 /**
  * Master switch for the on-device model/OpenCV debug dumps ([ModelAnalysisDebugWriter] and
  * [OpenCvDetectionDebugWriter]). These write a JPEG per classifier crop, verifier crop, and OpenCV
  * overlay into the app's Pictures debug folders — synchronous encodes on the inference thread that
- * add on the order of ~1.5s per frame. Kept off by default so normal runs are fast; flip [ENABLED]
+ * add-on the order of ~1.5s per frame. Kept off by default so normal runs are fast; flip [ENABLED]
  * to true (on a debuggable build) when you need to inspect exactly what the models saw.
  */
 internal object ModelDebugDumps {
@@ -181,11 +182,7 @@ internal class ModelAnalysisDebugSession(private val captureDirectory: File) {
             val padding = max(8f, textSize * 0.55f)
             val lineHeight = textSize * 1.3f
             val panelHeight = (padding * 2 + lineHeight * lines.size).toInt()
-            val annotated = Bitmap.createBitmap(
-                source.width,
-                source.height + panelHeight,
-                Bitmap.Config.ARGB_8888
-            )
+            val annotated = createBitmap(source.width, source.height + panelHeight)
             try {
                 val canvas = Canvas(annotated)
                 canvas.drawColor(Color.rgb(14, 17, 21))

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -34,6 +35,8 @@ internal class OverlayManager(
 ) {
     /** What the full-screen block's buttons do. Implemented by the service's recovery logic. */
     interface AppBlockActions {
+        fun onCooldownStarted()
+        fun onCooldownFinished()
         fun onReturnToFeed(app: ShieldedApp)
         fun onPrimaryRecovery(app: ShieldedApp)
         fun onCloseApp(app: ShieldedApp)
@@ -53,8 +56,10 @@ internal class OverlayManager(
 
     private val localizedOverlays = mutableListOf<LocalizedOverlay>()
     private var appBlockingOverlay: AppBlockingOverlay? = null
+    private var cooldownView: View? = null
     private var siteBlockingOverlay: SiteBlockingOverlay? = null
     private val activeIncidents = mutableSetOf<IncidentId>()
+    private val debugControlsEnabled = ModelDebugDumps.ENABLED
 
     /** Read-only handle so recovery can inspect the current full-screen block without owning it. */
     val appOverlay: AppBlockingOverlay? get() = appBlockingOverlay
@@ -63,6 +68,9 @@ internal class OverlayManager(
     val siteOverlay: SiteBlockingOverlay? get() = siteBlockingOverlay
 
     val hasLocalizedOverlays: Boolean get() = localizedOverlays.isNotEmpty()
+
+    /** While true, the scanner leaves the covered screen alone and lets the user pause. */
+    val isRecoveryCooldownActive: Boolean get() = cooldownView != null
 
     /** Blocking windows require the user-granted Display over other apps permission. */
     fun canShowBlockingOverlays(): Boolean = Settings.canDrawOverlays(context)
@@ -111,39 +119,47 @@ internal class OverlayManager(
         clearLocalizedOverlaysOnly()
         val view = View.inflate(context, R.layout.layout_app_screen_block, null)
         configureBlockingView(app, view, verdict, mode, resetFeedback = true)
+        hideRecoveryActions(view)
         view.findViewById<Button>(R.id.return_to_feed).setOnClickListener {
+            showRecoveryStatus(view)
             actions.onReturnToFeed(app)
         }
         view.findViewById<Button>(R.id.scroll_past_content).setOnClickListener {
+            showRecoveryStatus(view)
             actions.onPrimaryRecovery(app)
         }
         view.findViewById<Button>(R.id.close_app).setOnClickListener {
+            showRecoveryStatus(view)
             actions.onCloseApp(app)
         }
-        view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
-            currentIncident(view, incident)?.let(actions::onDismiss)
-        }
-        view.findViewById<Button>(R.id.feedback_yes).setOnClickListener {
-            currentIncident(view, incident)?.let { active ->
-                actions.onFeedback(active, true) { }
-                showFeedbackThanks(view)
+        if (debugControlsEnabled) {
+            view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
+                currentIncident(view, incident)?.let(actions::onDismiss)
             }
-        }
-        view.findViewById<Button>(R.id.feedback_no).setOnClickListener {
-            currentIncident(view, incident)?.let { active ->
-                actions.onFeedback(active, false) { saved ->
-                    val message = if (saved) {
-                        R.string.false_positive_saved
-                    } else {
-                        R.string.false_positive_save_failed
+            view.findViewById<Button>(R.id.feedback_yes).setOnClickListener {
+                currentIncident(view, incident)?.let { active ->
+                    actions.onFeedback(active, true) { }
+                    showFeedbackThanks(view)
+                }
+            }
+            view.findViewById<Button>(R.id.feedback_no).setOnClickListener {
+                currentIncident(view, incident)?.let { active ->
+                    actions.onFeedback(active, false) { saved ->
+                        val message = if (saved) {
+                            R.string.false_positive_saved
+                        } else {
+                            R.string.false_positive_save_failed
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                     }
-                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
         if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
         appBlockingOverlay = AppBlockingOverlay(app, view, incident, mode)
+        actions.onCooldownStarted()
+        startRecoveryCooldown(view, actions)
         Log.i(
             TAG,
             "Full-screen block shown; app=${app.packageName} verdict=$verdict " +
@@ -158,14 +174,14 @@ internal class OverlayManager(
         mode: ShieldedScreenMode,
         resetFeedback: Boolean
     ) {
-        view.findViewById<TextView>(R.id.blocked_reason).text = localizedReason(verdict)
-        view.findViewById<TextView>(R.id.blocked_explanation).text =
-            explanationFor(app, mode)
+        view.findViewById<TextView>(R.id.blocked_reason)
+            .setText(R.string.slow_down_message)
+        view.findViewById<TextView>(R.id.blocked_explanation).apply {
+            text = ""
+            visibility = View.GONE
+        }
         view.findViewById<Button>(R.id.close_app).text =
             context.getString(R.string.close_app, app.displayName)
-        // Feed posts, standalone posts, Explore, and every kind of Reel share the same safe exits.
-        // Screen mode only customizes the primary gesture; it does not remove Return to feed.
-        view.findViewById<Button>(R.id.return_to_feed).visibility = View.VISIBLE
         view.findViewById<Button>(R.id.scroll_past_content).text = context.getString(
             when (mode) {
                 ShieldedScreenMode.STORY -> R.string.skip_story
@@ -174,7 +190,64 @@ internal class OverlayManager(
                 else -> R.string.scroll_past
             }
         )
-        if (resetFeedback) resetFeedbackQuestion(view)
+        configureDebugControls(view, resetFeedback)
+    }
+
+    /** Keep normal recovery choices out of sight so the block creates a deliberate pause. */
+    private fun hideRecoveryActions(view: View) {
+        view.findViewById<View>(R.id.recovery_actions).visibility = View.INVISIBLE
+        updateCooldownText(view, RECOVERY_ACTION_REST_SECONDS)
+    }
+
+    private fun startRecoveryCooldown(view: View, actions: AppBlockActions) {
+        cooldownView = view
+        val cooldownEndsAt = SystemClock.elapsedRealtime() + RECOVERY_ACTION_REST_MS
+
+        fun tick() {
+            if (appBlockingOverlay?.view !== view) return
+            val remainingMs = cooldownEndsAt - SystemClock.elapsedRealtime()
+            if (remainingMs <= 0L) {
+                cooldownView = null
+                view.findViewById<TextView>(R.id.cooldown_timer).visibility = View.GONE
+                view.findViewById<View>(R.id.recovery_actions).visibility = View.VISIBLE
+                actions.onCooldownFinished()
+                return
+            }
+
+            val remainingSeconds = ((remainingMs + 999L) / 1_000L).toInt()
+            updateCooldownText(view, remainingSeconds)
+            view.postDelayed(::tick, minOf(1_000L, remainingMs))
+        }
+
+        tick()
+    }
+
+    private fun updateCooldownText(view: View, remainingSeconds: Int) {
+        view.findViewById<TextView>(R.id.cooldown_timer).apply {
+            text = context.resources.getQuantityString(
+                R.plurals.recovery_available_in_seconds,
+                remainingSeconds,
+                remainingSeconds
+            )
+            visibility = View.VISIBLE
+        }
+    }
+
+    private fun showRecoveryStatus(view: View) {
+        view.findViewById<TextView>(R.id.blocked_explanation).visibility = View.VISIBLE
+    }
+
+    private fun configureDebugControls(view: View, resetFeedback: Boolean) {
+        view.findViewById<View>(R.id.dismiss_overlay).visibility =
+            if (debugControlsEnabled) View.VISIBLE else View.GONE
+        view.findViewById<TextView>(R.id.feedback_prompt).visibility =
+            if (debugControlsEnabled) View.VISIBLE else View.GONE
+        if (debugControlsEnabled) {
+            if (resetFeedback) resetFeedbackQuestion(view)
+        } else {
+            view.findViewById<View>(R.id.feedback_buttons).visibility = View.GONE
+            view.findViewById<TextView>(R.id.feedback_response).visibility = View.GONE
+        }
     }
 
     private fun currentIncident(view: View, fallback: IncidentId): IncidentId? {
@@ -225,6 +298,7 @@ internal class OverlayManager(
     fun removeAppBlockingOverlay() {
         val overlay = appBlockingOverlay ?: return
         appBlockingOverlay = null
+        if (cooldownView === overlay.view) cooldownView = null
         runCatching { windowManager.removeView(overlay.view) }
         Log.i(TAG, "Removed full-screen block for ${overlay.app.packageName}")
     }
@@ -497,6 +571,8 @@ internal class OverlayManager(
     companion object {
         private const val TAG = "SinShield"
         private const val UNKNOWN_WINDOW_ID = -1
+        private const val RECOVERY_ACTION_REST_SECONDS = 5
+        private const val RECOVERY_ACTION_REST_MS = RECOVERY_ACTION_REST_SECONDS * 1_000L
         private const val MAX_SIMULTANEOUS_OVERLAYS = 3
         private const val OVERLAY_MATCH_IOU = 0.45f
         private const val MEDIA_SIZE_MATCH_MIN = 0.65f

@@ -83,33 +83,18 @@ internal class NsfwVerifier(context: Context, modelPath: String) : AutoCloseable
         }
     }
 
-    // Crops to the candidate box (normalized coordinates) so the verifier judges the flagged region
-    // rather than the whole screen. A null candidate means verify the full frame. The box is padded
-    // by CROP_MARGIN_RATIO and a minimum viewport share so a tight skin-heavy detection still gives
-    // the model enough clothing and scene context to distinguish a person from explicit content.
+    // Crop to the candidate's exact normalized media bounds so surrounding feed chrome and adjacent
+    // posts cannot dilute the verifier's judgment. A null candidate is the only case that verifies
+    // the full frame.
     private fun createCandidateCrop(bitmap: Bitmap, candidate: DetectionBox?): Bitmap {
         candidate ?: return bitmap
-        val expandedWidth = max(
-            (candidate.right - candidate.left) * (1f + 2f * CROP_MARGIN_RATIO),
-            MIN_CROP_WIDTH
-        ).coerceAtMost(1f)
-        val expandedHeight = max(
-            (candidate.bottom - candidate.top) * (1f + 2f * CROP_MARGIN_RATIO),
-            MIN_CROP_HEIGHT
-        ).coerceAtMost(1f)
-        val centerX = (candidate.left + candidate.right) / 2f
-        val centerY = (candidate.top + candidate.bottom) / 2f
-        val leftNormalized = (centerX - expandedWidth / 2f)
-            .coerceIn(0f, 1f - expandedWidth)
-        val topNormalized = (centerY - expandedHeight / 2f)
-            .coerceIn(0f, 1f - expandedHeight)
-        val left = (leftNormalized * bitmap.width)
+        val left = (candidate.left.coerceIn(0f, 1f) * bitmap.width)
             .toInt().coerceIn(0, bitmap.width - 1)
-        val top = (topNormalized * bitmap.height)
+        val top = (candidate.top.coerceIn(0f, 1f) * bitmap.height)
             .toInt().coerceIn(0, bitmap.height - 1)
-        val right = ((leftNormalized + expandedWidth) * bitmap.width)
+        val right = (candidate.right.coerceIn(0f, 1f) * bitmap.width)
             .toInt().coerceIn(left + 1, bitmap.width)
-        val bottom = ((topNormalized + expandedHeight) * bitmap.height)
+        val bottom = (candidate.bottom.coerceIn(0f, 1f) * bitmap.height)
             .toInt().coerceIn(top + 1, bitmap.height)
         return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
     }
@@ -128,9 +113,6 @@ internal class NsfwVerifier(context: Context, modelPath: String) : AutoCloseable
     companion object {
         private const val INPUT_SIZE = 384
         private const val CHANNELS = 3
-        private const val CROP_MARGIN_RATIO = 0.25f
-        private const val MIN_CROP_WIDTH = 0.50f
-        private const val MIN_CROP_HEIGHT = 0.35f
     }
 }
 

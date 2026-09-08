@@ -134,7 +134,7 @@ internal object AdultDomainListRepository {
             readTimeout = 20_000
             instanceFollowRedirects = true
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "SinShield Android domain filter")
+            setRequestProperty("User-Agent", "KillLust Android domain filter")
         }
         try {
             if (connection.responseCode !in 200..299) {
