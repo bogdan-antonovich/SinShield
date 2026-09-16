@@ -67,7 +67,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
 </script>
 
 <template>
-  <section id="how-it-works" class="app-shell py-20 sm:py-24 lg:py-32">
+  <section id="how-it-works" class="app-shell py-16 sm:py-20 lg:py-32">
     <BaseContainer>
       <div class="grid gap-14 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-20 xl:gap-28">
         <div
@@ -87,7 +87,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
             />
           </div>
 
-          <div class="mt-7 h-80 max-w-xl sm:mt-8 sm:h-60 lg:h-64 xl:h-56">
+          <div class="mt-7 max-w-xl sm:mt-8 lg:min-h-64 xl:min-h-56">
             <h3 class="font-display text-2xl font-bold tracking-[-0.02em] text-white">
               {{ steps[activeIndex]?.title }}
             </h3>
@@ -96,14 +96,14 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
             </p>
           </div>
 
-          <BaseButton to="/products/android" variant="inverse" class="mt-8 w-fit">
+          <BaseButton to="/products/android" variant="inverse" class="mt-8 w-full sm:w-fit lg:mt-6">
             Get Started
           </BaseButton>
         </div>
 
         <div class="lg:pt-1">
           <h2
-            class="max-w-2xl font-display text-[36px] font-extrabold leading-[1.08] tracking-[-0.025em] text-white sm:text-[48px] lg:text-[56px]"
+            class="max-w-2xl font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-white sm:text-[44px] lg:text-[56px]"
           >
             How SinShield Works
           </h2>
@@ -131,12 +131,12 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
               :aria-selected="activeIndex === index"
               aria-controls="how-it-works-panel"
               :tabindex="activeIndex === index ? 0 : -1"
-              class="group flex w-full items-center border-b border-white/20 py-5 text-left sm:py-6"
+              class="group flex min-h-14 w-full items-center border-b border-white/20 py-4 text-left sm:py-6"
               @click="selectStep(index)"
               @keydown="onTabKeydown($event, index)"
             >
               <span
-                class="font-display text-2xl font-bold leading-tight tracking-[-0.02em] sm:text-[28px]"
+                class="font-display text-xl font-bold leading-tight tracking-[-0.02em] sm:text-[26px] lg:text-[28px]"
                 :class="
                   activeIndex === index ? 'text-white' : 'text-white/35 group-hover:text-white/60'
                 "

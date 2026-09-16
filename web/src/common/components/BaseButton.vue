@@ -25,7 +25,7 @@ const classes = computed(() => [
   'base-button inline-flex items-center justify-center rounded-full font-display',
   'focus-visible:outline-none focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50',
   props.size === 'default'
-    ? 'min-h-14 px-10 text-base font-bold'
+    ? 'min-h-13 px-7 text-center text-[15px] font-bold sm:min-h-14 sm:px-10 sm:text-base'
     : 'min-h-10 px-5 text-sm font-semibold',
   props.variant === 'primary'
     ? 'base-button--primary bg-primary text-white focus-visible:ring-primary/35'

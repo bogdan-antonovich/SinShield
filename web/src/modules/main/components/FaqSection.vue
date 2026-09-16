@@ -51,10 +51,10 @@ const faqItems: FaqItem[] = [
 </script>
 
 <template>
-  <section id="faq" class="bg-surface py-20 sm:py-24 lg:py-32">
+  <section id="faq" class="bg-surface py-16 sm:py-20 lg:py-32">
     <BaseContainer>
       <h2
-        class="text-center font-display text-[36px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[48px] lg:text-[56px]"
+        class="text-center font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[44px] lg:text-[56px]"
       >
         FAQ
       </h2>
@@ -66,7 +66,7 @@ const faqItems: FaqItem[] = [
           class="group border-b border-navy/15"
         >
           <summary
-            class="flex cursor-pointer list-none items-center justify-between gap-6 py-6 font-display text-xl font-bold leading-tight text-navy marker:hidden sm:py-7 sm:text-2xl [&::-webkit-details-marker]:hidden"
+            class="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-5 font-display text-lg font-bold leading-tight text-navy marker:hidden sm:gap-6 sm:py-7 sm:text-2xl [&::-webkit-details-marker]:hidden"
           >
             <span>{{ item.question }}</span>
             <span

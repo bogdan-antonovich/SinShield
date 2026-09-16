@@ -4,18 +4,18 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 </script>
 
 <template>
-  <section id="about" class="overflow-hidden bg-surface py-20 sm:py-24 lg:py-32">
+  <section id="about" class="overflow-hidden bg-surface py-16 sm:py-20 lg:py-32">
     <BaseContainer
-      class="grid items-center gap-16 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)] md:gap-12 lg:gap-24"
+      class="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)] lg:gap-20 xl:gap-24"
     >
       <div class="max-w-2xl">
         <h2
-          class="mb-6 font-display text-[36px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[48px] lg:text-[56px]"
+          class="mb-5 font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:mb-6 sm:text-[44px] lg:text-[56px]"
         >
           Protection You Can Rely On
         </h2>
 
-        <div class="space-y-5 text-lg font-normal leading-[1.55] text-navy/75 sm:text-xl">
+        <div class="space-y-4 text-base font-normal leading-[1.65] text-navy/75 sm:space-y-5 sm:text-lg lg:text-xl">
           <p>
             Leaving porn behind is not a question of understanding the damage, because most men here
             already know exactly what it costs them. The value of this app is practical: it makes
@@ -32,7 +32,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
         <BaseButton to="/products" class="mt-10"> Get Started </BaseButton>
       </div>
 
-      <div class="flex justify-center md:justify-end">
+      <div class="flex justify-center lg:justify-end">
         <img
           src="/images/SinShieldPreview.png"
           alt="SinShield protection status and permissions on a Google Pixel 10 Pro"

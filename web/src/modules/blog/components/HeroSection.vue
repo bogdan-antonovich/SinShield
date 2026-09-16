@@ -18,22 +18,22 @@ const breadcrumbs = [
 </script>
 
 <template>
-  <section id="hero" class="overflow-hidden bg-surface pb-20 pt-32 sm:pb-24 sm:pt-36 lg:pb-32 lg:pt-40">
+  <section id="hero" class="overflow-hidden bg-surface pb-16 pt-28 sm:pb-20 sm:pt-32 lg:pb-32 lg:pt-40">
     <BaseContainer>
       <TheBreadCrumbs
         :items="breadcrumbs"
         color="#000000"
-        class="mb-12 self-start text-navy sm:mb-16"
+        class="mb-10 self-start text-navy sm:mb-14"
       />
 
-      <article class="grid items-center gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:gap-16 xl:gap-24">
+      <article class="grid items-center gap-9 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:gap-16 xl:gap-24">
         <div class="order-2 lg:order-1">
           <p class="mb-6 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm font-semibold text-navy/60 sm:text-base">
             <span>{{ article.author }},</span>
             <time :datetime="article.publishedAt">{{ formatArticleDate(article.publishedAt) }}</time>
           </p>
 
-          <h1 class="max-w-3xl font-display text-[2.6rem] font-extrabold leading-[0.98] tracking-[-0.045em] text-navy sm:text-[3.7rem] lg:text-[4.4rem] xl:text-[5.1rem]">
+          <h1 class="max-w-3xl font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-navy sm:text-[3.35rem] lg:text-[4.4rem] xl:text-[5.1rem]">
             <RouterLink
               :to="getArticlePath(article)"
               class="rounded-lg decoration-primary/35 decoration-4 underline-offset-[10px] transition hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/35"

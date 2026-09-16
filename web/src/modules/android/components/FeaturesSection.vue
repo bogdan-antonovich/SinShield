@@ -59,11 +59,11 @@ const features: Feature[] = [
 </script>
 
 <template>
-  <section id="features" class="overflow-hidden bg-surface py-20 sm:py-24 lg:py-32">
+  <section id="features" class="overflow-hidden bg-surface py-16 sm:py-20 lg:py-32">
     <BaseContainer>
       <div class="mx-auto max-w-4xl text-center">
         <h2
-          class="font-display text-[36px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[48px] lg:text-[56px]"
+          class="font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[44px] lg:text-[56px]"
         >
           Protection Without Giving Up Your Privacy
         </h2>
@@ -78,12 +78,12 @@ const features: Feature[] = [
       </div>
 
       <div
-        class="mt-14 grid gap-px overflow-hidden rounded-[1.75rem] border border-navy/10 bg-navy/10 sm:grid-cols-2 lg:mt-20 lg:grid-cols-4"
+        class="mt-12 grid gap-px overflow-hidden rounded-[1.5rem] border border-navy/10 bg-navy/10 sm:mt-14 sm:grid-cols-2 sm:rounded-[1.75rem] lg:mt-20 lg:grid-cols-4"
       >
         <article
           v-for="feature in features"
           :key="feature.label"
-          class="flex min-h-64 flex-col bg-white p-7 sm:p-8 lg:min-h-72"
+          class="flex min-h-56 flex-col bg-white p-6 sm:min-h-64 sm:p-8 lg:min-h-72"
           :class="feature.featured ? 'sm:col-span-2 lg:col-span-2' : ''"
         >
           <div class="flex items-center gap-3 text-navy/55">
@@ -228,7 +228,7 @@ const features: Feature[] = [
             }}</span>
           </div>
 
-          <div class="mt-auto pt-12">
+          <div class="mt-auto pt-9 sm:pt-12">
             <p
               class="font-display font-medium leading-[1.05] tracking-[-0.035em] text-navy"
               :class="

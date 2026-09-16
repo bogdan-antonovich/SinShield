@@ -37,9 +37,6 @@ const navItems: NavItem[] = [
   // { label: 'Premium', to: '/premium' },
 ]
 
-const languages = ['EN', 'RU', 'ES', 'DE']
-const currentLang = ref(languages[0])
-
 const cta = { label: 'Get started', to: '/products' }
 
 // const LANG_KEY = '__lang__'
@@ -55,11 +52,6 @@ let scrollFrame: number | null = null
 const open = (key: string) => (openKey.value = key)
 const toggle = (key: string) => (openKey.value = openKey.value === key ? null : key)
 const closeMenus = () => (openKey.value = null)
-
-function selectLang(lang: string) {
-  currentLang.value = lang
-  closeMenus()
-}
 
 /* Close on outside click + Escape. */
 function onDocClick(e: MouseEvent) {
@@ -129,18 +121,18 @@ watch(
 <template>
   <div
     ref="root"
-    class="fixed left-36 right-0 top-0 z-50 transition-transform duration-300 ease-out motion-reduce:transition-none sm:left-44 md:left-0"
+    class="fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out motion-reduce:transition-none"
     :class="isHeaderVisible ? 'translate-y-0' : '-translate-y-full'"
     @focusin="isHeaderVisible = true"
   >
-    <BaseContainer class="pt-4">
+    <BaseContainer class="pt-3 sm:pt-4">
       <div
-        class="flex items-center justify-between gap-4 rounded-full bg-surface px-5 py-3 shadow-xl shadow-primary/10 ring-1 ring-navy/5 backdrop-blur"
+        class="flex items-center justify-between gap-3 rounded-full bg-surface px-4 py-2.5 shadow-xl shadow-primary/10 ring-1 ring-navy/5 backdrop-blur sm:px-5 sm:py-3"
       >
         <!-- Brand -->
         <RouterLink
           :to="brand.to"
-          class="font-display text-2xl font-extrabold tracking-tight"
+          class="font-display text-xl font-extrabold tracking-tight sm:text-2xl"
           aria-label="Home"
         >
           <span class="text-navy">{{ brand.lead }}</span
@@ -396,20 +388,7 @@ watch(
           </div>
         </template>
 
-        <div class="mt-auto flex flex-wrap gap-1 border-t border-navy/10 px-1 pt-3">
-          <button
-            v-for="lang in languages"
-            :key="lang"
-            type="button"
-            class="rounded-full px-3 py-1.5 text-sm font-semibold transition"
-            :class="lang === currentLang ? 'bg-primary text-white' : 'text-navy hover:bg-primary/5'"
-            @click="selectLang(lang)"
-          >
-            {{ lang }}
-          </button>
-        </div>
-
-        <BaseButton :to="cta.to" size="compact" class="mt-3 w-full py-3">
+        <BaseButton :to="cta.to" size="compact" class="mt-auto w-full py-3">
           {{ cta.label }}
         </BaseButton>
       </nav>

@@ -18,16 +18,16 @@ const protectionTypes = [
 </script>
 
 <template>
-  <section id="about_protection" class="app-shell py-24 sm:py-32 lg:py-40">
+  <section id="about_protection" class="app-shell py-20 sm:py-24 lg:py-40">
     <BaseContainer class="flex flex-col items-center">
       <h2
-        class="max-w-6xl text-center font-display text-[44px] font-extrabold leading-[1.05] tracking-[-0.035em] text-white sm:text-[64px] lg:text-[80px]"
+        class="max-w-6xl text-center font-display text-[40px] font-extrabold leading-[1.05] tracking-[-0.035em] text-white sm:text-[56px] lg:text-[80px]"
       >
         Where SinShield Protects You
       </h2>
 
       <div class="mt-16 w-full max-w-6xl sm:mt-20 lg:mt-24">
-        <div class="grid grid-cols-1 gap-16 sm:grid-cols-3 sm:gap-10 lg:gap-16">
+        <div class="grid grid-cols-1 gap-12 md:grid-cols-3 md:gap-8 lg:gap-16">
           <div
             v-for="protectionType in protectionTypes"
             :key="protectionType.label"
@@ -37,7 +37,7 @@ const protectionTypes = [
               :src="protectionType.icon"
               alt=""
               aria-hidden="true"
-              class="h-28 w-32 object-contain opacity-70 transition-opacity duration-200 group-hover:opacity-100 sm:h-36 sm:w-40 lg:h-44 lg:w-48"
+              class="h-24 w-28 object-contain opacity-80 transition-opacity duration-200 group-hover:opacity-100 sm:h-32 sm:w-36 lg:h-44 lg:w-48"
             />
             <span
               class="font-display text-2xl font-bold leading-tight text-white/70 transition-colors duration-200 group-hover:text-white sm:text-[28px] lg:text-[32px]"

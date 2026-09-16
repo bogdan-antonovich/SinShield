@@ -12,11 +12,11 @@ const androidSteps = [
 </script>
 
 <template>
-  <section id="steps" class="overflow-hidden bg-surface py-20 sm:py-24 lg:py-32">
+  <section id="steps" class="overflow-hidden bg-surface py-16 sm:py-20 lg:py-32">
     <BaseContainer>
       <div class="mx-auto max-w-4xl text-center">
         <h2
-          class="mb-[25px] font-display text-[25px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[48px] lg:text-[56px]"
+          class="mb-7 font-display text-[32px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[44px] lg:text-[56px]"
         >
           <span>Sin</span><span class="text-primary">Shield.</span> for Android
         </h2>
@@ -32,7 +32,7 @@ const androidSteps = [
         </BaseButton>
       </div>
 
-      <ol class="mx-auto mt-14 flex max-w-lg flex-col gap-6 lg:mt-20">
+      <ol class="mx-auto mt-12 flex max-w-lg flex-col gap-6 sm:mt-14 lg:mt-20">
         <li
           v-for="(step, index) in androidSteps"
           :key="step.label"

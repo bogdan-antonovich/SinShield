@@ -14,14 +14,14 @@ defineProps<{
 <template>
   <section
     id="library"
-    class="scroll-mt-8 bg-background-soft py-20 sm:py-24 lg:py-32"
+    class="scroll-mt-8 bg-background-soft py-16 sm:py-20 lg:py-32"
     aria-labelledby="library-heading"
   >
     <BaseContainer>
       <div class="mb-12 border-b border-navy/10 pb-6 sm:mb-16">
         <h2
           id="library-heading"
-          class="font-display text-[2.6rem] font-extrabold leading-none tracking-[-0.04em] text-navy sm:text-5xl lg:text-6xl"
+          class="font-display text-[2.35rem] font-extrabold leading-none tracking-[-0.04em] text-navy sm:text-5xl lg:text-6xl"
         >
           The library
         </h2>

@@ -4,11 +4,11 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 </script>
 
 <template>
-  <section id="what-that-is" class="overflow-hidden bg-surface py-20 sm:py-24 lg:py-32">
+  <section id="what-that-is" class="overflow-hidden bg-surface py-16 sm:py-20 lg:py-32">
     <BaseContainer
-      class="grid items-center gap-16 md:grid-cols-[minmax(280px,0.72fr)_minmax(0,1fr)] md:gap-12 lg:gap-24"
+      class="grid items-center gap-12 lg:grid-cols-[minmax(280px,0.72fr)_minmax(0,1fr)] lg:gap-20 xl:gap-24"
     >
-      <div class="flex justify-center md:justify-start">
+      <div class="flex justify-center lg:justify-start">
         <div
           class="relative aspect-[864/1821] w-[240px] overflow-hidden rounded-[2.275rem] sm:w-[290px] sm:rounded-[3.25rem] lg:w-[320px] lg:rounded-[3.5rem] drop-shadow-2xl"
         >
@@ -29,12 +29,12 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 
       <div class="max-w-2xl">
         <h2
-          class="mb-6 font-display text-[36px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[48px] lg:text-[56px]"
+          class="mb-5 font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:mb-6 sm:text-[44px] lg:text-[56px]"
         >
           Control Still Belongs to You
         </h2>
 
-        <div class="space-y-5 text-lg font-normal leading-[1.55] text-navy/75 sm:text-xl">
+        <div class="space-y-4 text-base font-normal leading-[1.65] text-navy/75 sm:space-y-5 sm:text-lg lg:text-xl">
           <p>
             SinShield does not make the decision for you. It creates a brief pause between seeing
             sexual content and acting on the impulse, giving you time to breathe and choose what

@@ -123,12 +123,12 @@ usePageMetadata(() => {
 </script>
 
 <template>
-  <main v-if="article" class="bg-background-soft pb-24 pt-32 sm:pb-32 sm:pt-36 lg:pt-40">
+  <main v-if="article" class="bg-background-soft pb-20 pt-28 sm:pb-28 sm:pt-32 lg:pb-32 lg:pt-40">
     <BaseContainer>
-      <TheBreadCrumbs :items="breadcrumbs" color="#082D48" class="mb-12 sm:mb-16" />
+      <TheBreadCrumbs :items="breadcrumbs" color="#082D48" class="mb-10 sm:mb-14" />
 
       <header class="mx-auto max-w-5xl text-center">
-        <h1 class="font-display text-[2.75rem] font-extrabold leading-[0.98] tracking-[-0.045em] text-navy sm:text-6xl lg:text-[5rem]">
+        <h1 class="font-display text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-navy sm:text-6xl lg:text-[5rem]">
           {{ article.title }}
         </h1>
 
@@ -153,8 +153,8 @@ usePageMetadata(() => {
         </ul>
       </header>
 
-      <div class="mt-10 flex justify-center sm:mt-12">
-        <BaseButton to="/products/android">Block Adult Content with SinShield</BaseButton>
+      <div class="mt-9 flex justify-center sm:mt-12">
+        <BaseButton to="/products/android" class="w-full sm:w-auto">Block Adult Content with SinShield</BaseButton>
       </div>
 
       <figure class="mx-auto mt-8 max-w-6xl overflow-hidden rounded-[2rem] bg-background-mute shadow-2xl shadow-primary/10 sm:mt-10">
