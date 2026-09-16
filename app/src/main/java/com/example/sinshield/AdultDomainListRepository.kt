@@ -18,6 +18,12 @@ internal data class DomainListUpdateResult(
     val errorMessage: String? = null
 )
 
+internal enum class AddCustomDomainResult {
+    ADDED,
+    INVALID,
+    ALREADY_BLOCKED
+}
+
 /** Loads the bundled seed and atomically replaces it with a validated maintained blocklist. */
 internal object AdultDomainListRepository {
     const val SOURCE_URL =
@@ -29,6 +35,7 @@ internal object AdultDomainListRepository {
     private const val PREFERENCES = "adult_domain_list"
     private const val DOMAIN_COUNT = "domain_count"
     private const val LAST_UPDATED_AT = "last_updated_at"
+    private const val CUSTOM_DOMAINS = "custom_domains"
     // A healthy maintained list has tens of thousands of entries; anything smaller is treated as a
     // truncated or wrong download and is rejected in favor of the last good list or the seed.
     private const val MINIMUM_REMOTE_DOMAINS = 10_000
@@ -64,18 +71,43 @@ internal object AdultDomainListRepository {
         if (stored.isFile) {
             runCatching {
                 stored.bufferedReader().use(AdultDomainMatcher::fromReader)
-            }.getOrNull()?.takeIf { it.size >= MINIMUM_REMOTE_DOMAINS }?.let { return it }
+            }.getOrNull()?.takeIf { it.size >= MINIMUM_REMOTE_DOMAINS }?.let {
+                return it.withDomains(customDomains(context))
+            }
         }
-        return context.assets.open(ASSET_NAME).bufferedReader().use(AdultDomainMatcher::fromReader)
+        val seed = context.assets.open(ASSET_NAME).bufferedReader().use(AdultDomainMatcher::fromReader)
+        return seed.withDomains(customDomains(context))
     }
 
     fun storedDomainCount(context: Context): Int {
         val storedPreferences = preferences(context)
         return if (storedPreferences.contains(DOMAIN_COUNT)) {
-            storedPreferences.getInt(DOMAIN_COUNT, 0)
+            storedPreferences.getInt(DOMAIN_COUNT, 0) + customDomains(context).size
         } else {
             load(context).size
         }
+    }
+
+    fun customDomains(context: Context): List<String> =
+        preferences(context).getStringSet(CUSTOM_DOMAINS, emptySet()).orEmpty().sorted()
+
+    fun addCustomDomain(context: Context, input: String): AddCustomDomainResult {
+        val domain = AdultDomainMatcher.normalizeUserDomain(input)
+            ?: return AddCustomDomainResult.INVALID
+        val currentMatcher = load(context)
+        if (currentMatcher.isBlocked(domain)) return AddCustomDomainResult.ALREADY_BLOCKED
+
+        val updated = customDomains(context).toMutableSet().apply { add(domain) }
+        preferences(context).edit().putStringSet(CUSTOM_DOMAINS, updated).apply()
+        cached = currentMatcher.withDomains(listOf(domain))
+        return AddCustomDomainResult.ADDED
+    }
+
+    fun removeCustomDomain(context: Context, domain: String) {
+        val updated = customDomains(context).toMutableSet()
+        if (!updated.remove(domain)) return
+        preferences(context).edit().putStringSet(CUSTOM_DOMAINS, updated).apply()
+        cached = null
     }
 
     fun refreshIfStale(
@@ -134,7 +166,7 @@ internal object AdultDomainListRepository {
             readTimeout = 20_000
             instanceFollowRedirects = true
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "KillLust Android domain filter")
+            setRequestProperty("User-Agent", "SinSheld Android domain filter")
         }
         try {
             if (connection.responseCode !in 200..299) {
@@ -190,8 +222,9 @@ internal object AdultDomainListRepository {
                 .apply()
             // Publish the new list so subsequent load() calls return it instead of the now-stale
             // cached parse; this is the only path that invalidates the cache.
-            cached = matcher
-            return matcher
+            val matcherWithCustomDomains = matcher.withDomains(customDomains(context))
+            cached = matcherWithCustomDomains
+            return matcherWithCustomDomains
         } finally {
             connection.disconnect()
             if (temporary.exists()) temporary.delete()

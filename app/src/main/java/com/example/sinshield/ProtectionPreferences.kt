@@ -24,7 +24,7 @@ internal object ProtectionPreferences {
 
     fun protectionLevel(context: Context): ProtectionLevel {
         val saved = preferences(context).getString(PROTECTION_LEVEL, null)
-        return ProtectionLevel.entries.firstOrNull { it.name == saved } ?: ProtectionLevel.MAXIMUM
+        return ProtectionLevel.entries.firstOrNull { it.name == saved } ?: ProtectionLevel.RECOMMENDED
     }
 
     fun setProtectionLevel(context: Context, level: ProtectionLevel) {
@@ -58,7 +58,7 @@ internal object ProtectionPreferences {
             thresholds = thresholds,
             requireVerifierForStrongExplicit = preferences.getBoolean(
                 REQUIRE_VERIFIER_FOR_STRONG_EXPLICIT,
-                false
+                true
             ),
             blockSuggestive = preferences.getBoolean(STRICT_MODE, false)
         )
@@ -81,6 +81,15 @@ internal object ProtectionPreferences {
 
     fun resetCustomThresholds(context: Context) {
         preferences(context).edit { putBoolean(CUSTOM_THRESHOLDS, false) }
+    }
+
+    /** Restores every advanced tuning control to the app's current recommended defaults. */
+    fun resetDetectionTuningToRecommended(context: Context) {
+        preferences(context).edit {
+            putString(PROTECTION_LEVEL, ProtectionLevel.RECOMMENDED.name)
+            putBoolean(CUSTOM_THRESHOLDS, false)
+            putBoolean(REQUIRE_VERIFIER_FOR_STRONG_EXPLICIT, true)
+        }
     }
 
     fun setRequireVerifierForStrongExplicit(context: Context, required: Boolean) {
@@ -144,6 +153,17 @@ internal enum class ProtectionLevel(
     MAXIMUM(
         displayName = "Maximum",
         description = "Most sensitive; catches more content and may make mistakes",
+        thresholds = DetectionThresholds(
+            explicit = 0.40f,
+            semiNude = 0.50f,
+            suspiciousExplicit = 0.25f,
+            suspiciousSemiNude = 0.20f,
+            verifier = 0.50f
+        )
+    ),
+    RECOMMENDED(
+        displayName = "Recommended",
+        description = "Default detection tuning",
         thresholds = DetectionThresholds()
     )
 }

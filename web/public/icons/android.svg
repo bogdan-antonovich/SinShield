@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Android">
+  <g fill="#3DDC84">
+    <path d="M14.7 14.3 11.4 8.6a1 1 0 0 1 1.7-1l3.4 5.8A18.5 18.5 0 0 1 24 11.8c2.7 0 5.2.6 7.5 1.6l3.4-5.8a1 1 0 1 1 1.7 1l-3.3 5.7A14 14 0 0 1 39 25H9a14 14 0 0 1 5.7-10.7Z"/>
+    <path d="M9 27h30v11a3 3 0 0 1-3 3h-2v4a2 2 0 0 1-4 0v-4H18v4a2 2 0 0 1-4 0v-4h-2a3 3 0 0 1-3-3V27Z"/>
+    <rect x="3" y="27" width="4" height="14" rx="2"/>
+    <rect x="41" y="27" width="4" height="14" rx="2"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="17" cy="20" r="1.25"/>
+    <circle cx="31" cy="20" r="1.25"/>
+  </g>
+</svg>

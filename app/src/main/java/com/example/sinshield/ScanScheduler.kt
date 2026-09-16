@@ -19,7 +19,9 @@ internal class ScanScheduler(
     private val onBeginScan: () -> Unit,
     private val activeIntervalMs: Long = ACTIVE_SCAN_INTERVAL_MS,
     private val stableIntervalMs: Long = STABLE_SCAN_INTERVAL_MS,
-    private val backoffStepMs: Long = SCAN_BACKOFF_STEP_MS
+    private val backoffStepMs: Long = SCAN_BACKOFF_STEP_MS,
+    private val postCompletionRestMs: Long = POST_COMPLETION_REST_MS,
+    private val urgentCompletionRestMs: Long = URGENT_COMPLETION_REST_MS
 ) {
     /** Abstraction over Handler.postDelayed/removeCallbacks so the schedule can be faked in tests. */
     interface Scheduler {
@@ -33,6 +35,7 @@ internal class ScanScheduler(
     private var nextGeneration = 0L
     private var latestCompletedGeneration = 0L
     private var lastCaptureAt = 0L
+    private var nextScanNotBeforeAt = 0L
     private var scheduledScan: Any? = null
     private var scheduledScanAt = Long.MAX_VALUE
     private var intervalMs = activeIntervalMs
@@ -79,8 +82,8 @@ internal class ScanScheduler(
         }
 
         val current = now()
-        val cooldownEnd = lastCaptureAt + intervalMs
-        val desiredAt = if (current >= cooldownEnd) current + delayMs else cooldownEnd
+        val cooldownEnd = max(lastCaptureAt + intervalMs, nextScanNotBeforeAt)
+        val desiredAt = max(current + delayMs, cooldownEnd)
 
         // Keep the earliest trailing scan. Rapid events during cooldown collapse into this one
         // callback, so a final frame is still captured after a one-off scroll.
@@ -108,7 +111,7 @@ internal class ScanScheduler(
      */
     fun startFlightOrDefer(): Long? {
         val current = now()
-        val cooldownRemaining = lastCaptureAt + intervalMs - current
+        val cooldownRemaining = max(lastCaptureAt + intervalMs, nextScanNotBeforeAt) - current
         if (cooldownRemaining > 0) {
             requestScan(cooldownRemaining)
             return null
@@ -134,6 +137,7 @@ internal class ScanScheduler(
      * app is still foreground before calling.
      */
     fun scheduleAfterCompletion(forceFast: Boolean) {
+        enforceCompletionRest(forceFast)
         if (forceFast || latestFramePending) {
             latestFramePending = false
             intervalMs = activeIntervalMs
@@ -141,6 +145,16 @@ internal class ScanScheduler(
         } else {
             requestScan(intervalMs)
         }
+    }
+
+    /**
+     * Keeps events arriving immediately after a long inference from bypassing the recovery gap.
+     * Cooldown used to be measured only from capture start, so any scan longer than the interval
+     * effectively had no cooldown and a busy feed kept the CPU saturated indefinitely.
+     */
+    fun enforceCompletionRest(urgent: Boolean) {
+        val rest = if (urgent) urgentCompletionRestMs else postCompletionRestMs
+        nextScanNotBeforeAt = max(nextScanNotBeforeAt, now() + rest)
     }
 
     /**
@@ -153,8 +167,10 @@ internal class ScanScheduler(
     }
 
     companion object {
-        private const val ACTIVE_SCAN_INTERVAL_MS = 250L
-        private const val STABLE_SCAN_INTERVAL_MS = 1_150L
-        private const val SCAN_BACKOFF_STEP_MS = 200L
+        private const val ACTIVE_SCAN_INTERVAL_MS = 500L
+        private const val STABLE_SCAN_INTERVAL_MS = 1_500L
+        private const val SCAN_BACKOFF_STEP_MS = 250L
+        private const val POST_COMPLETION_REST_MS = 1_250L
+        private const val URGENT_COMPLETION_REST_MS = 250L
     }
 }

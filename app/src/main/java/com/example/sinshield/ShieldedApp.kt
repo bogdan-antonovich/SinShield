@@ -450,6 +450,9 @@ internal data class ShieldedApp(
         val X = ShieldedApp(
             packageName = "com.twitter.android",
             displayName = "X",
+            // X changes destinations inside the same accessibility window. A successful click on
+            // its explicit Home target is therefore stronger evidence than the unchanged window.
+            homeTabClickIsConclusive = true,
             homeTabViewIdHints = listOf("/home", "navigation_home"),
             homeTabLabels = setOf("home"),
             recentsLabels = setOf("x", "x app"),

@@ -16,7 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * Owns every window SinShield draws and the collections that track them: the post-by-post
+ * Owns every window SinSheld draws and the collections that track them: the post-by-post
  * localized covers, the full-screen app block, and the browser site block. All WindowManager
  * add/remove/update calls, the layout params, view inflation and teardown, and scroll tracking
  * live here — nothing else in the app talks to WindowManager.
@@ -36,10 +36,10 @@ internal class OverlayManager(
     /** What the full-screen block's buttons do. Implemented by the service's recovery logic. */
     interface AppBlockActions {
         fun onCooldownStarted()
-        fun onCooldownFinished()
         fun onReturnToFeed(app: ShieldedApp)
         fun onPrimaryRecovery(app: ShieldedApp)
         fun onCloseApp(app: ShieldedApp)
+        fun onRecoveryVerificationBlocked(app: ShieldedApp)
         fun onDismiss(incident: IncidentId)
         fun onFeedback(
             incident: IncidentId,
@@ -57,9 +57,9 @@ internal class OverlayManager(
     private val localizedOverlays = mutableListOf<LocalizedOverlay>()
     private var appBlockingOverlay: AppBlockingOverlay? = null
     private var cooldownView: View? = null
+    private var cooldownGeneration = 0L
     private var siteBlockingOverlay: SiteBlockingOverlay? = null
     private val activeIncidents = mutableSetOf<IncidentId>()
-    private val debugControlsEnabled = ModelDebugDumps.ENABLED
 
     /** Read-only handle so recovery can inspect the current full-screen block without owning it. */
     val appOverlay: AppBlockingOverlay? get() = appBlockingOverlay
@@ -112,6 +112,7 @@ internal class OverlayManager(
             existing.incident = incident
             existing.mode = mode
             configureBlockingView(app, existing.view, verdict, mode, resetFeedback = incidentChanged)
+            restartRecoveryCooldown(existing.view, actions)
             return
         }
         if (existing != null) removeAppBlockingOverlay()
@@ -119,7 +120,6 @@ internal class OverlayManager(
         clearLocalizedOverlaysOnly()
         val view = View.inflate(context, R.layout.layout_app_screen_block, null)
         configureBlockingView(app, view, verdict, mode, resetFeedback = true)
-        hideRecoveryActions(view)
         view.findViewById<Button>(R.id.return_to_feed).setOnClickListener {
             showRecoveryStatus(view)
             actions.onReturnToFeed(app)
@@ -132,7 +132,7 @@ internal class OverlayManager(
             showRecoveryStatus(view)
             actions.onCloseApp(app)
         }
-        if (debugControlsEnabled) {
+        if (GlobalDebugMode.ENABLED) {
             view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
                 currentIncident(view, incident)?.let(actions::onDismiss)
             }
@@ -158,8 +158,7 @@ internal class OverlayManager(
 
         if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
         appBlockingOverlay = AppBlockingOverlay(app, view, incident, mode)
-        actions.onCooldownStarted()
-        startRecoveryCooldown(view, actions)
+        restartRecoveryCooldown(view, actions)
         Log.i(
             TAG,
             "Full-screen block shown; app=${app.packageName} verdict=$verdict " +
@@ -176,10 +175,6 @@ internal class OverlayManager(
     ) {
         view.findViewById<TextView>(R.id.blocked_reason)
             .setText(R.string.slow_down_message)
-        view.findViewById<TextView>(R.id.blocked_explanation).apply {
-            text = ""
-            visibility = View.GONE
-        }
         view.findViewById<Button>(R.id.close_app).text =
             context.getString(R.string.close_app, app.displayName)
         view.findViewById<Button>(R.id.scroll_past_content).text = context.getString(
@@ -199,18 +194,23 @@ internal class OverlayManager(
         updateCooldownText(view, RECOVERY_ACTION_REST_SECONDS)
     }
 
-    private fun startRecoveryCooldown(view: View, actions: AppBlockActions) {
+    private fun restartRecoveryCooldown(
+        view: View,
+        actions: AppBlockActions
+    ) {
+        hideRecoveryActions(view)
         cooldownView = view
+        val generation = ++cooldownGeneration
         val cooldownEndsAt = SystemClock.elapsedRealtime() + RECOVERY_ACTION_REST_MS
+        actions.onCooldownStarted()
 
         fun tick() {
-            if (appBlockingOverlay?.view !== view) return
+            if (appBlockingOverlay?.view !== view || generation != cooldownGeneration) return
             val remainingMs = cooldownEndsAt - SystemClock.elapsedRealtime()
             if (remainingMs <= 0L) {
                 cooldownView = null
-                view.findViewById<TextView>(R.id.cooldown_timer).visibility = View.GONE
+                view.findViewById<TextView>(R.id.cooldown_timer).visibility = View.INVISIBLE
                 view.findViewById<View>(R.id.recovery_actions).visibility = View.VISIBLE
-                actions.onCooldownFinished()
                 return
             }
 
@@ -238,11 +238,13 @@ internal class OverlayManager(
     }
 
     private fun configureDebugControls(view: View, resetFeedback: Boolean) {
+        val dismissEnabled = DebugSettings.overlayDismiss(context)
+        val feedbackEnabled = DebugSettings.overlayFeedback(context)
         view.findViewById<View>(R.id.dismiss_overlay).visibility =
-            if (debugControlsEnabled) View.VISIBLE else View.GONE
+            if (dismissEnabled) View.VISIBLE else View.GONE
         view.findViewById<TextView>(R.id.feedback_prompt).visibility =
-            if (debugControlsEnabled) View.VISIBLE else View.GONE
-        if (debugControlsEnabled) {
+            if (feedbackEnabled) View.VISIBLE else View.GONE
+        if (feedbackEnabled) {
             if (resetFeedback) resetFeedbackQuestion(view)
         } else {
             view.findViewById<View>(R.id.feedback_buttons).visibility = View.GONE
@@ -536,11 +538,15 @@ internal class OverlayManager(
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            // This window is owned by an AccessibilityService. Using the trusted accessibility
+            // type keeps Xiaomi/Android 16 from reducing an untrusted application overlay's
+            // opacity while FLAG_NOT_TOUCHABLE lets a protected gesture pass underneath it.
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             flags,
-            PixelFormat.TRANSLUCENT
+            PixelFormat.OPAQUE
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            alpha = 1f
         }
     }
 
@@ -569,7 +575,7 @@ internal class OverlayManager(
         first != UNKNOWN_WINDOW_ID && second != UNKNOWN_WINDOW_ID && first != second
 
     companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val UNKNOWN_WINDOW_ID = -1
         private const val RECOVERY_ACTION_REST_SECONDS = 5
         private const val RECOVERY_ACTION_REST_MS = RECOVERY_ACTION_REST_SECONDS * 1_000L

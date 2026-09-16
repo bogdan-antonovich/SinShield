@@ -1,12 +1,10 @@
 package com.example.sinshield
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.util.Log
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorCompletionService
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -74,10 +72,6 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     )
     private val finalizer = AnalysisFinalizer(CandidateVerifier(context, VERIFIER_MODEL_ASSET))
 
-    // Lets the Instagram flow run the fast whole-screen classifier alongside the slower OpenCV
-    // region detection instead of one after the other.
-    private val instagramWholeScreenExecutor = Executors.newSingleThreadExecutor()
-
     private val xFlow: AppAnalysisFlow = XAnalysisFlow(
         fullScreenAnalyzer,
         localizedAnalyzer,
@@ -86,8 +80,7 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     private val instagramFlow: AppAnalysisFlow = InstagramAnalysisFlow(
         fullScreenAnalyzer,
         instagramLocalizedAnalyzer,
-        finalizer,
-        instagramWholeScreenExecutor
+        finalizer
     )
     private val redditFlow: AppAnalysisFlow = RedditAnalysisFlow(
         fullScreenAnalyzer,
@@ -117,7 +110,6 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     val warmUpComplete: Boolean get() = finalizer.warmUpComplete
 
     override fun close() {
-        instagramWholeScreenExecutor.shutdown()
         instagramLocalizedAnalyzer.close()
         localizedAnalyzer.close()
         fullScreenAnalyzer.close()
@@ -125,7 +117,7 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val CLASSIFIER_MODEL_ASSET = "nsfw_mobilenet_v2.tflite"
         private const val VERIFIER_MODEL_ASSET = "nsfw_marqo_vit_tiny_384.onnx"
     }
@@ -149,7 +141,7 @@ internal data class WholeScreenAnalysis(
 
 /** Shared classifier capability; app flows decide when it is called and what follows it. */
 internal class FullScreenAnalyzer(context: Context, modelAsset: String) : AutoCloseable {
-    private val classifier = NsfwClassifier(context, modelAsset)
+    private val classifier = NsfwClassifier(context, modelAsset, numThreads = FULL_SCREEN_THREADS)
 
     fun classify(bitmap: Bitmap): FloatArray = classifier.classify(bitmap)
 
@@ -167,6 +159,10 @@ internal class FullScreenAnalyzer(context: Context, modelAsset: String) : AutoCl
     }
 
     override fun close() = classifier.close()
+
+    private companion object {
+        private const val FULL_SCREEN_THREADS = 1
+    }
 }
 
 /** Shared result construction and verifier policy used after an app flow finishes its stages. */
@@ -266,7 +262,7 @@ internal class CandidateVerifier(
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
     }
 }
 
@@ -343,20 +339,27 @@ internal class AsyncOpenCvLocalizedAnalyzer(
 ) : LocalizedAnalyzer {
     private val visualMediaDetector = OpenCvMediaRegionDetector(
         config = detectorConfig,
-        debugWriter = if (ModelDebugDumps.ENABLED &&
-            context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        ) {
+        debugWriter = if (GlobalDebugMode.ENABLED) {
             OpenCvDetectionDebugWriter(context)
         } else {
             null
         }
     )
-    private val workers = Executors.newFixedThreadPool(LOCALIZED_WORKERS)
-    private val classifiers = ArrayBlockingQueue<NsfwClassifier>(LOCALIZED_WORKERS).apply {
-        repeat(LOCALIZED_WORKERS) {
-            add(NsfwClassifier(context, modelAsset, numThreads = THREADS_PER_LOCALIZED_WORKER))
+    // Each app-specific detector has its own geometry rules, but its native classifiers are created
+    // only if that detector actually needs to score a crop. This avoids loading both the default and
+    // Instagram model pools merely because the accessibility service connected.
+    private val workersDelegate = lazy {
+        newBackgroundFixedThreadPool("SinSheld-Region", LOCALIZED_WORKERS)
+    }
+    private val workers by workersDelegate
+    private val classifiersDelegate = lazy {
+        ArrayBlockingQueue<NsfwClassifier>(LOCALIZED_WORKERS).apply {
+            repeat(LOCALIZED_WORKERS) {
+                add(NsfwClassifier(context, modelAsset, numThreads = THREADS_PER_LOCALIZED_WORKER))
+            }
         }
     }
+    private val classifiers by classifiersDelegate
 
     override fun analyze(
         bitmap: Bitmap,
@@ -406,10 +409,12 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         val frameWidth = bitmap.width
         val frameHeight = bitmap.height
         regions.forEachIndexed { index, region ->
-            val crop = crop(bitmap, region)
             completion.submit {
+                if (aborted.get()) return@submit CompletedRegion.skipped(region)
+                // Allocate at worker execution time instead of queuing every crop up front. At most
+                // LOCALIZED_WORKERS crop bitmaps now coexist, even on an 18-region Instagram grid.
+                val crop = crop(bitmap, region)
                 try {
-                    if (aborted.get()) return@submit CompletedRegion.skipped(region)
                     val classifier = classifiers.take()
                     try {
                         if (aborted.get()) {
@@ -436,18 +441,22 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         }
 
         val accumulated = MutableLocalizedDetection()
+        var earlyResult: LocalizedDetection? = null
         repeat(regions.size) {
             val completed = completion.take().get()
+            if (earlyResult != null) return@repeat
             val scores = completed.scores ?: return@repeat
             accumulated.add(completed.region, scores, thresholds)
             if (stopAfterFirstActionable &&
                 accumulated.verdict(thresholds) != ContentVerdict.SAFE
             ) {
                 aborted.set(true)
-                return accumulated.snapshot()
+                earlyResult = accumulated.snapshot()
             }
         }
-        return accumulated.snapshot()
+        // Drain every submitted task before returning: worker crops may share the source bitmap's
+        // pixels, and FrameScanner recycles that source as soon as this analysis call completes.
+        return earlyResult ?: accumulated.snapshot()
     }
 
     private fun crop(bitmap: Bitmap, region: DetectionRegion): Bitmap {
@@ -459,11 +468,12 @@ internal class AsyncOpenCvLocalizedAnalyzer(
     }
 
     override fun close() {
+        if (!workersDelegate.isInitialized()) return
         workers.shutdown()
         if (!workers.awaitTermination(WORKER_SHUTDOWN_SECONDS, TimeUnit.SECONDS)) {
             workers.shutdownNow()
         }
-        classifiers.forEach(NsfwClassifier::close)
+        if (classifiersDelegate.isInitialized()) classifiers.forEach(NsfwClassifier::close)
     }
 
     private data class CompletedRegion(
@@ -525,8 +535,11 @@ internal class AsyncOpenCvLocalizedAnalyzer(
     }
 
     private companion object {
-        private const val LOCALIZED_WORKERS = 2
-        private const val THREADS_PER_LOCALIZED_WORKER = 2
+        // One classifier keeps peak CPU and native memory bounded on 4 GB phones. The service is
+        // long-lived; saturating several cores to shave milliseconds off a scan makes OEM
+        // watchdogs force-stop the entire package, which disables both Accessibility and VPN.
+        private const val LOCALIZED_WORKERS = 1
+        private const val THREADS_PER_LOCALIZED_WORKER = 1
         private const val WORKER_SHUTDOWN_SECONDS = 5L
     }
 }

@@ -25,6 +25,10 @@ internal class NsfwVerifier(context: Context, modelPath: String) : AutoCloseable
     init {
         val modelBytes = context.assets.open(modelPath).use { it.readBytes() }
         OrtSession.SessionOptions().use { options ->
+            // The verifier runs alongside screenshot/OpenCV work. Keep ORT from creating a second
+            // large CPU pool that competes with the accessibility process and triggers OEM watchdogs.
+            options.setIntraOpNumThreads(1)
+            options.setInterOpNumThreads(1)
             session = environment.createSession(modelBytes, options)
         }
         inputName = session.inputNames.single()

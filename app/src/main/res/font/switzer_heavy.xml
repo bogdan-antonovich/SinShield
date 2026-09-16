@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        app:font="@font/switzer"
+        app:fontStyle="normal"
+        app:fontVariationSettings="'wght' 900"
+        app:fontWeight="900" />
+</font-family>

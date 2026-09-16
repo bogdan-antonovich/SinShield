@@ -131,6 +131,6 @@ class NsfwClassifier(
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
     }
 }

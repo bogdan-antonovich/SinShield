@@ -2,12 +2,12 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_block"
+    android:background="@color/sinshield_surface"
     android:clickable="true"
     android:focusable="true"
     android:importantForAccessibility="yes"
-    android:paddingHorizontal="28dp"
-    android:paddingVertical="40dp">
+    android:paddingHorizontal="32dp"
+    android:paddingVertical="36dp">
 
     <TextView
         android:id="@+id/dismiss_overlay"
@@ -19,7 +19,7 @@
         android:focusable="true"
         android:gravity="center"
         android:text="@string/close_symbol"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/sinshield_navy"
         android:textSize="32sp" />
 
     <LinearLayout
@@ -29,78 +29,120 @@
         android:gravity="center"
         android:orientation="vertical">
 
-        <ImageView
-            android:layout_width="92dp"
-            android:layout_height="92dp"
-            android:contentDescription="@null"
-            android:src="@mipmap/ic_launcher_round" />
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/app_name"
+            android:gravity="center"
+            android:importantForAccessibility="yes"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/brand_sin"
+                android:textColor="@color/sinshield_navy"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/brand_shield"
+                android:textColor="@color/sinshield_primary"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/blocked_reason"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="36dp"
             android:gravity="center"
-            android:text="@string/explicit_content_blocked"
-            android:textColor="#FFFFFFFF"
-            android:textSize="27sp"
+            android:text="@string/slow_down_message"
+            android:textColor="@color/sinshield_navy"
+            android:textSize="30sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/overlay_supporting_message"
+            android:textColor="#BF082D48"
+            android:textSize="17sp" />
 
         <TextView
             android:id="@+id/blocked_explanation"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="14dp"
             android:gravity="center"
-            android:textColor="#FFD0D5DD"
-            android:textSize="16sp" />
+            android:textColor="@color/sinshield_primary_dark"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:visibility="invisible" />
 
         <TextView
             android:id="@+id/cooldown_timer"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="28dp"
             android:layout_marginTop="20dp"
             android:gravity="center"
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textColor="@color/sinshield_primary"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:visibility="invisible" />
 
         <TextView
             android:id="@+id/feedback_prompt"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="22dp"
             android:gravity="center"
             android:text="@string/disturbing_question"
-            android:textColor="#FFFFFFFF"
-            android:textSize="16sp"
+            android:textColor="@color/sinshield_navy"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <LinearLayout
             android:id="@+id/feedback_buttons"
-            style="?android:attr/buttonBarStyle"
             android:layout_width="240dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:gravity="center"
             android:orientation="horizontal">
 
             <Button
                 android:id="@+id/feedback_yes"
-                style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="@string/yes" />
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/yes"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/feedback_no"
-                style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:text="@string/no" />
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/no"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
         </LinearLayout>
 
@@ -110,37 +152,50 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:gravity="center"
-            android:textColor="#FFB9CAD3"
+            android:textColor="#99082D48"
             android:textSize="14sp"
             android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/recovery_actions"
-            android:layout_width="300dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="24dp"
             android:orientation="vertical">
 
             <Button
                 android:id="@+id/return_to_feed"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/return_to_feed" />
+                android:layout_height="56dp"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/return_to_feed"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/scroll_past_content"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="56dp"
                 android:layout_marginTop="10dp"
-                android:text="@string/scroll_past" />
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/scroll_past"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/close_app"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="56dp"
                 android:layout_marginTop="10dp"
-                android:backgroundTint="#FF353A43"
-                android:textColor="#FFFFFFFF" />
+                android:background="@drawable/bg_overlay_button_dark"
+                android:backgroundTint="@null"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
         </LinearLayout>
 

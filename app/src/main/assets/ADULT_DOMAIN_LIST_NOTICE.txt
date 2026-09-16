@@ -1,10 +1,10 @@
-KillLust downloads the porn-only hosts-file variant maintained by the
+SinSheld downloads the porn-only hosts-file variant maintained by the
 StevenBlack/hosts project:
 
 https://github.com/StevenBlack/hosts
 https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts
 
 StevenBlack/hosts is an aggregator. Its project documentation identifies the
-upstream sources and their respective licenses. KillLust does not bundle a
+upstream sources and their respective licenses. SinSheld does not bundle a
 snapshot of that aggregated list in the APK; it downloads updates directly
 from the project URL above and stores the last validated copy on the device.

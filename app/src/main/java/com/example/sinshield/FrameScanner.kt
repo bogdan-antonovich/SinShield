@@ -1,7 +1,6 @@
 package com.example.sinshield
 
 import android.accessibilityservice.AccessibilityService
-import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
@@ -10,9 +9,7 @@ import android.util.Log
 import android.view.Display
 import android.view.View
 import androidx.annotation.RequiresApi
-import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
@@ -35,8 +32,7 @@ internal class FrameScanner(
     private val handler: Handler,
     private val overlays: OverlayManager,
     private val appBlockActions: OverlayManager.AppBlockActions,
-    private val collectMediaRegions: () -> List<DetectionRegion>,
-    private val collectScreenSignals: (ShieldedApp) -> ScreenSignals,
+    private val collectAccessibilityContext: (ShieldedApp?) -> ScanAccessibilityContext,
     private val host: Host
 ) {
     /**
@@ -55,16 +51,18 @@ internal class FrameScanner(
         fun clearLocalizedOverlays(packageName: String, windowId: Int)
     }
 
-    private val analysisFlows = AppAnalysisFlowRegistry(service.applicationContext)
+    // Model construction is intentionally confined to inferenceExecutor. Creating several native
+    // interpreters from AccessibilityService.onCreate() can stall the service main thread, and
+    // retaining them while no protected app is visible wastes hundreds of megabytes on some devices.
+    @Volatile private var analysisFlows: AppAnalysisFlowRegistry? = null
     private val modelDebugWriter =
-        if (ModelDebugDumps.ENABLED &&
-            service.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        ) {
+        if (GlobalDebugMode.ENABLED) {
             ModelAnalysisDebugWriter(service.applicationContext)
         } else {
             null
         }
-    private val inferenceExecutor = Executors.newSingleThreadExecutor()
+    private val captureExecutor = newBackgroundSingleThreadExecutor("SinSheld-Capture")
+    private val inferenceExecutor = newBackgroundSingleThreadExecutor("SinSheld-Inference")
 
     private var stableSafeFrames = 0
     private var lastFrameHash: Long? = null
@@ -73,8 +71,10 @@ internal class FrameScanner(
     private var dismissedIncident: IncidentId? = null
     private var pendingFeedback: PendingFeedback? = null
     private var lastDetectionSettings: DetectionSettings? = null
-    private var scheduledModelWarmup: Runnable? = null
+    private var scheduledModelRelease: Runnable? = null
     private var postRecoverySafePackage: String? = null
+    private val overlayReleaseGate = OverlayReleaseGate(REQUIRED_SAFE_RELEASE_ANALYSES)
+    private val scanBurstPolicy = ScanBurstPolicy()
 
     // The scan state machine (single-flight, generations, debounce, adaptive interval) is driven
     // only from the main thread. onBeginScan is guarded so the injected start action never runs
@@ -95,7 +95,9 @@ internal class FrameScanner(
         canScan = {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                 host.isMonitored(host.foregroundPackage) &&
-                !overlays.isRecoveryCooldownActive
+                !overlays.isRecoveryCooldownActive &&
+                (overlays.appOverlay == null ||
+                    postRecoverySafePackage == host.foregroundPackage)
         },
         onBeginScan = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) beginScan()
@@ -104,9 +106,6 @@ internal class FrameScanner(
 
     /** True while a capture/inference flight is outstanding; the event loop reads it to coalesce. */
     val inFlight: Boolean get() = scanScheduler.inFlight
-
-    /** A provisional shield needs exactly one scan after its visual cooldown ends. */
-    val hasPendingConfirmation: Boolean get() = confirmation != null
 
     fun requestScan(delayMs: Long) = scanScheduler.requestScan(delayMs)
 
@@ -179,6 +178,8 @@ internal class FrameScanner(
      * finishes. Otherwise a fresh scan is scheduled after the debounce.
      */
     fun onMonitoredEvent() {
+        cancelScheduledModelRelease()
+        scanBurstPolicy.noteEvent()
         if (scanScheduler.inFlight) {
             scanScheduler.markFramePending()
             return
@@ -196,19 +197,54 @@ internal class FrameScanner(
         if (!keepLastHash) lastFrameHash = null
     }
 
+    /** Releases native model state after the user has stayed outside protected apps for a while. */
+    fun scheduleModelRelease() {
+        if (scheduledModelRelease != null || analysisFlows == null) return
+        val release = Runnable {
+            scheduledModelRelease = null
+            if (host.isMonitored(host.foregroundPackage) || scanScheduler.inFlight) return@Runnable
+            inferenceExecutor.execute {
+                analysisFlows?.close()
+                analysisFlows = null
+                Log.i(TAG, "Detection models released while protection is idle")
+            }
+        }
+        scheduledModelRelease = release
+        handler.postDelayed(release, MODEL_IDLE_RELEASE_DELAY_MS)
+    }
+
+    fun cancelScheduledModelRelease() {
+        scheduledModelRelease?.let(handler::removeCallbacks)
+        scheduledModelRelease = null
+    }
+
+    /** Drops native ML state when Android reports memory pressure; the next scan reloads it. */
+    fun releaseModelsForMemoryPressure() {
+        cancelScheduledModelRelease()
+        inferenceExecutor.execute {
+            analysisFlows?.close()
+            analysisFlows = null
+            Log.w(TAG, "Detection models released because Android reported memory pressure")
+        }
+    }
+
     /** Closes the detection models and stops the inference thread on service teardown. */
     fun shutdown() {
+        cancelScheduledModelRelease()
         inferenceExecutor.execute {
-            analysisFlows.close()
+            analysisFlows?.close()
+            analysisFlows = null
         }
         inferenceExecutor.shutdown()
+        captureExecutor.shutdownNow()
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun beginScan() {
         if (scanScheduler.inFlight) return
         if (overlays.isRecoveryCooldownActive) return
-        host.syncForegroundFromRoot()
+        // Foreground identity is maintained by accessibility events. A root lookup here can block
+        // the service main thread for several seconds if the foreground app is unresponsive.
         val pkg = host.foregroundPackage ?: return
         if (!host.isMonitored(pkg)) return
 
@@ -228,30 +264,53 @@ internal class FrameScanner(
         val shieldedApp = ShieldedApp.forPackage(pkg)
         val allowLateSafeResult = postRecoverySafePackage == pkg &&
             overlays.appOverlay?.app?.packageName == pkg
-        postRecoverySafePackage = null
-        val screenSignals = shieldedApp?.let(collectScreenSignals) ?: ScreenSignals.EMPTY
-        val context = ScanContext(
-            generation = generation,
-            packageName = pkg,
-            windowId = host.foregroundWindowId,
-            eventTimestamp = host.lastRelevantEventUptimeAt,
-            mediaRegions = collectMediaRegions(),
-            screenMode = shieldedApp?.screenMode(screenSignals) ?: ShieldedScreenMode.UNKNOWN,
-            screenSignals = screenSignals,
-            knownSafeFrameHash = lastSafeFrameHash,
-            protectionLevel = protectionLevel,
-            detectionSettings = detectionSettings,
-            allowLateSafeResult = allowLateSafeResult
-        )
+        if (!allowLateSafeResult && postRecoverySafePackage != null) {
+            postRecoverySafePackage = null
+        }
+        val windowId = host.foregroundWindowId
+        val eventTimestamp = host.lastRelevantEventUptimeAt
+        // AccessibilityNodeInfo getters are synchronous Binder calls into the foreground app. A
+        // slow/ANR-ing feed can hold one for seconds, so collect the tree snapshot on a background
+        // worker. Blocking the AccessibilityService main looper makes HyperOS force-stop the whole
+        // package and consequently turns off both Accessibility and VPN.
+        captureExecutor.execute {
+            val accessibility = runCatching { collectAccessibilityContext(shieldedApp) }
+                .onFailure { Log.w(TAG, "Could not collect accessibility scan context", it) }
+                .getOrDefault(ScanAccessibilityContext.EMPTY)
+            handler.post {
+                if (host.foregroundPackage != pkg || windowChanged(windowId, host.foregroundWindowId)) {
+                    finishFailedScan("Foreground changed while preparing scan")
+                    return@post
+                }
+                val context = ScanContext(
+                    generation = generation,
+                    packageName = pkg,
+                    windowId = windowId,
+                    eventTimestamp = eventTimestamp,
+                    mediaRegions = accessibility.mediaRegions,
+                    screenMode = shieldedApp?.screenMode(accessibility.screenSignals)
+                        ?: ShieldedScreenMode.UNKNOWN,
+                    screenSignals = accessibility.screenSignals,
+                    // Every pass which can contribute to removing an app shield must run the complete
+                    // model pipeline; a repeated frame must not be accepted through the safe-hash cache.
+                    knownSafeFrameHash = if (allowLateSafeResult) null else lastSafeFrameHash,
+                    protectionLevel = protectionLevel,
+                    detectionSettings = detectionSettings,
+                    allowLateSafeResult = allowLateSafeResult
+                )
+                requestPreparedScreenshot(context)
+            }
+        }
+    }
 
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun requestPreparedScreenshot(context: ScanContext) {
         val hiddenForLegacyCapture = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overlays.hideForLegacyCapture()
         } else {
             emptyList()
         }
-        val capture = Runnable {
-            requestScreenshot(context, hiddenForLegacyCapture)
-        }
+        val capture = Runnable { requestScreenshot(context, hiddenForLegacyCapture) }
         if (hiddenForLegacyCapture.isEmpty()) {
             capture.run()
         } else {
@@ -262,23 +321,28 @@ internal class FrameScanner(
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun requestScreenshot(context: ScanContext, hiddenForLegacyCapture: List<View>) {
+    private fun requestScreenshot(
+        context: ScanContext,
+        hiddenForLegacyCapture: List<View>,
+        forceDisplayCapture: Boolean = false
+    ) {
         try {
-            val callback = screenshotCallback(context, hiddenForLegacyCapture)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            val useWindowCapture = !forceDisplayCapture &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                 context.windowId != UNKNOWN_WINDOW_ID
-            ) {
-                // Window capture excludes SinShield's accessibility covers, allowing a covered
+            val callback = screenshotCallback(context, hiddenForLegacyCapture, useWindowCapture)
+            if (useWindowCapture) {
+                // Window capture excludes SinSheld's accessibility covers, allowing a covered
                 // image to be re-evaluated and a genuinely safe feed to remove stale covers.
                 service.takeScreenshotOfWindow(
                     context.windowId,
-                    ContextCompat.getMainExecutor(service),
+                    captureExecutor,
                     callback
                 )
             } else {
                 service.takeScreenshot(
                     Display.DEFAULT_DISPLAY,
-                    ContextCompat.getMainExecutor(service),
+                    captureExecutor,
                     callback
                 )
             }
@@ -292,10 +356,11 @@ internal class FrameScanner(
     @RequiresApi(Build.VERSION_CODES.R)
     private fun screenshotCallback(
         context: ScanContext,
-        hiddenForLegacyCapture: List<View>
+        hiddenForLegacyCapture: List<View>,
+        usedWindowCapture: Boolean
     ) = object : AccessibilityService.TakeScreenshotCallback {
         override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
-            overlays.restoreLegacyCaptureOverlays(hiddenForLegacyCapture)
+            handler.post { overlays.restoreLegacyCaptureOverlays(hiddenForLegacyCapture) }
             val screenshotTimestamp = result.timestamp
             val hardwareBuffer = result.hardwareBuffer
             var hardwareBitmap: Bitmap? = null
@@ -303,7 +368,7 @@ internal class FrameScanner(
                 hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, result.colorSpace)
                 val bitmap = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
                 if (bitmap == null) {
-                    finishFailedScan("Screenshot buffer could not be copied")
+                    handler.post { finishFailedScan("Screenshot buffer could not be copied") }
                     return
                 }
                 inferenceExecutor.execute {
@@ -311,7 +376,7 @@ internal class FrameScanner(
                 }
             } catch (error: Throwable) {
                 Log.e(TAG, "Failed to read screenshot buffer", error)
-                finishFailedScan("Screenshot buffer failed")
+                handler.post { finishFailedScan("Screenshot buffer failed") }
             } finally {
                 hardwareBitmap?.recycle()
                 hardwareBuffer.close()
@@ -319,16 +384,32 @@ internal class FrameScanner(
         }
 
         override fun onFailure(errorCode: Int) {
-            overlays.restoreLegacyCaptureOverlays(hiddenForLegacyCapture)
-            Log.w(TAG, "Screenshot failed: ${screenshotErrorName(errorCode)}")
-            if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
-                scanScheduler.clampToStable()
+            handler.post {
+                if (usedWindowCapture &&
+                    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR
+                ) {
+                    // Some HyperOS builds advertise window capture but intermittently reject a
+                    // valid accessibility window. A display capture keeps protection alive; there
+                    // is no SinShield overlay in the ordinary scanning state to contaminate it.
+                    Log.w(TAG, "Window screenshot failed; falling back to display capture")
+                    requestScreenshot(
+                        context,
+                        hiddenForLegacyCapture,
+                        forceDisplayCapture = true
+                    )
+                    return@post
+                }
+                overlays.restoreLegacyCaptureOverlays(hiddenForLegacyCapture)
+                Log.w(TAG, "Screenshot failed: ${screenshotErrorName(errorCode)}")
+                if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
+                    scanScheduler.clampToStable()
+                }
+                finishFailedScan(
+                    "Screenshot error $errorCode",
+                    preserveRateLimitBackoff =
+                        errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT
+                )
             }
-            finishFailedScan(
-                "Screenshot error $errorCode",
-                preserveRateLimitBackoff =
-                    errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT
-            )
         }
     }
 
@@ -342,7 +423,10 @@ internal class FrameScanner(
                 context.packageName,
                 frameHash
             )
-            val analysis = if (unchangedKnownSafeFrame || rememberedFalsePositive) {
+            val forceFullAnalysis = context.allowLateSafeResult
+            val analysis = if (!forceFullAnalysis &&
+                (unchangedKnownSafeFrame || rememberedFalsePositive)
+            ) {
                 FrameAnalysis.safe(
                     frameHash,
                     deduplicated = true,
@@ -353,7 +437,7 @@ internal class FrameScanner(
                     falsePositiveSuppressed = rememberedFalsePositive
                 )
             } else {
-                analysisFlows.analyze(
+                getOrCreateAnalysisFlows().analyze(
                     AppAnalysisInput(
                         packageName = context.packageName,
                         frameHash = frameHash,
@@ -383,34 +467,11 @@ internal class FrameScanner(
         }
     }
 
-    fun scheduleModelWarmup() {
-        if (scheduledModelWarmup != null || analysisFlows.warmUpComplete) return
-        val warmup = Runnable {
-            scheduledModelWarmup = null
-            if (host.isMonitored(host.foregroundPackage) || scanScheduler.inFlight) return@Runnable
-            inferenceExecutor.execute {
-                val sample = Bitmap.createBitmap(
-                    VERIFIER_WARMUP_SIZE,
-                    VERIFIER_WARMUP_SIZE,
-                    Bitmap.Config.ARGB_8888
-                )
-                try {
-                    if (analysisFlows.warmUp(sample)) {
-                        Log.i(TAG, "Detection models warmed while idle")
-                    }
-                } finally {
-                    sample.recycle()
-                }
-            }
+    private fun getOrCreateAnalysisFlows(): AppAnalysisFlowRegistry =
+        analysisFlows ?: AppAnalysisFlowRegistry(service.applicationContext).also {
+            analysisFlows = it
+            Log.i(TAG, "Detection models loaded on the inference thread")
         }
-        scheduledModelWarmup = warmup
-        handler.postDelayed(warmup, MODEL_WARMUP_IDLE_DELAY_MS)
-    }
-
-    fun cancelModelWarmup() {
-        scheduledModelWarmup?.let(handler::removeCallbacks)
-        scheduledModelWarmup = null
-    }
 
     private fun completeScan(
         context: ScanContext,
@@ -483,7 +544,29 @@ internal class FrameScanner(
             ContentVerdict.SAFE -> {
                 if (ShieldedApp.forPackage(context.packageName) != null && host.closingAppInProgress) {
                     Log.d(TAG, "Safe frame reached during close; keeping shield until task removal")
+                    postRecoverySafePackage = null
+                    overlayReleaseGate.reset()
+                } else if (overlays.appOverlay?.app?.packageName == context.packageName) {
+                    val canRelease = overlayReleaseGate.recordSafeAnalysis()
+                    if (!canRelease) {
+                        lastSafeFrameHash = analysis.frameHash
+                        noteSafeFrame(contentChangedSignificantly)
+                        Log.i(
+                            TAG,
+                            "Keeping full-screen shield after clean analysis " +
+                                "${overlayReleaseGate.consecutiveSafeAnalyses}/" +
+                                "$REQUIRED_SAFE_RELEASE_ANALYSES"
+                        )
+                        requestPostRecoveryScan(context.packageName, CONFIRMATION_INTERVAL_MS)
+                        return
+                    }
+                    Log.i(TAG, "Releasing full-screen shield after three clean analyses")
+                    postRecoverySafePackage = null
+                    overlayReleaseGate.reset()
+                    host.clearLocalizedOverlays(context.packageName, context.windowId)
                 } else {
+                    postRecoverySafePackage = null
+                    overlayReleaseGate.reset()
                     host.clearLocalizedOverlays(context.packageName, context.windowId)
                 }
                 confirmation = null
@@ -491,10 +574,17 @@ internal class FrameScanner(
                 noteSafeFrame(contentChangedSignificantly)
                 scheduleAfterCompletion()
             }
-            ContentVerdict.SUSPICIOUS -> handleSuspicious(context, analysis, diagnostics, timing)
+            ContentVerdict.SUSPICIOUS -> {
+                postRecoverySafePackage = null
+                overlayReleaseGate.reset()
+                handleSuspicious(context, analysis, diagnostics, timing)
+            }
             ContentVerdict.EXPLICIT,
-            ContentVerdict.SEMI_NUDE ->
+            ContentVerdict.SEMI_NUDE -> {
+                postRecoverySafePackage = null
+                overlayReleaseGate.reset()
                 handleFinalUnsafe(context, analysis, diagnostics = diagnostics, timing = timing)
+            }
         }
     }
 
@@ -567,7 +657,7 @@ internal class FrameScanner(
         if (dismissedIncident.matchesVisibleFrame(incident)) return
         val shieldedApp = ShieldedApp.forPackage(context.packageName)
         if (shieldedApp != null) {
-            val screenSignals = collectScreenSignals(shieldedApp)
+            val screenSignals = context.screenSignals
             val mode = shieldedApp.screenMode(screenSignals)
             if (mode != ShieldedScreenMode.CREATION) {
                 preparePendingFeedback(context, analysis, incident, verdict, diagnostics)
@@ -622,7 +712,7 @@ internal class FrameScanner(
         }
         val shieldedApp = ShieldedApp.forPackage(context.packageName)
         if (shieldedApp != null) {
-            val screenSignals = collectScreenSignals(shieldedApp)
+            val screenSignals = context.screenSignals
             val mode = shieldedApp.screenMode(screenSignals)
             if (mode == ShieldedScreenMode.CREATION) {
                 Log.i(
@@ -636,6 +726,7 @@ internal class FrameScanner(
                 lastSafeFrameHash = null
                 noteSafeFrame(contentChangedSignificantly = false)
             } else {
+                appBlockActions.onRecoveryVerificationBlocked(shieldedApp)
                 preparePendingFeedback(context, analysis, incident, verdict, diagnostics)
                 overlays.showAppBlockingOverlay(shieldedApp, incident, verdict, mode, appBlockActions)
                 logBanTiming(context, verdict, timing, provisional = false, mode = mode)
@@ -713,7 +804,6 @@ internal class FrameScanner(
     }
 
     private fun isCurrent(context: ScanContext): Boolean {
-        host.syncForegroundFromRoot()
         return host.foregroundPackage == context.packageName &&
             !windowChanged(context.windowId, host.foregroundWindowId)
     }
@@ -733,13 +823,19 @@ internal class FrameScanner(
     }
 
     private fun scheduleAfterCompletion(forceFast: Boolean = false) {
-        host.syncForegroundFromRoot()
+        // Arm the completion-based gap even when the finite follow-up burst is already exhausted;
+        // a new event must not restart heavy analysis immediately after the previous one returned.
+        scanScheduler.enforceCompletionRest(forceFast)
         if (!host.isMonitored(host.foregroundPackage)) {
             Log.d(
                 TAG,
                 "Next scan not scheduled; foreground=${host.foregroundPackage} " +
                     "window=${host.foregroundWindowId}"
             )
+            return
+        }
+        if (!scanBurstPolicy.shouldSchedule(forceFast, scanScheduler.framePending)) {
+            Log.d(TAG, "Scan burst complete; waiting for the next accessibility event")
             return
         }
         scanScheduler.scheduleAfterCompletion(forceFast)
@@ -769,10 +865,9 @@ internal class FrameScanner(
     }
 
     companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val UNKNOWN_WINDOW_ID = -1
-        private const val VERIFIER_WARMUP_SIZE = 384
-        private const val MODEL_WARMUP_IDLE_DELAY_MS = 1_000L
+        private const val MODEL_IDLE_RELEASE_DELAY_MS = 60_000L
         private const val EVENT_DEBOUNCE_MS = 80L
         // ScanScheduler still enforces Android's capture cooldown. Adding another fixed wait here
         // only leaves suspicious pixels visible longer on devices whose first inference was slow.
@@ -784,6 +879,7 @@ internal class FrameScanner(
         // three more full inference passes before the shield appears.
         private const val MAX_CONFIRMATION_CAPTURES = 1
         private const val REDDIT_STRONG_EXPLICIT_CONFIRMATIONS = 1
+        private const val REQUIRED_SAFE_RELEASE_ANALYSES = 3
         private const val SIGNIFICANT_HASH_DISTANCE = 14
         private const val FEEDBACK_JPEG_QUALITY = 90
     }
@@ -802,6 +898,15 @@ private data class ScanContext(
     val detectionSettings: DetectionSettings,
     val allowLateSafeResult: Boolean
 )
+
+internal data class ScanAccessibilityContext(
+    val mediaRegions: List<DetectionRegion>,
+    val screenSignals: ScreenSignals
+) {
+    companion object {
+        val EMPTY = ScanAccessibilityContext(emptyList(), ScreenSignals.EMPTY)
+    }
+}
 
 /** The three uptime-millis stamps [logBanTiming] needs, carried from completion to the show site. */
 private data class ScanTiming(
@@ -908,7 +1013,7 @@ internal data class FrameAnalysis(
     val deduplicated: Boolean,
     val falsePositiveSuppressed: Boolean = false,
     val thresholds: DetectionThresholds = DetectionThresholds(),
-    val requireVerifierForStrongExplicit: Boolean = false,
+    val requireVerifierForStrongExplicit: Boolean = true,
     val frameJpeg: ByteArray? = null
 ) {
     private val candidatePolicy: StageOneResult
@@ -939,7 +1044,7 @@ internal data class FrameAnalysis(
             deduplicated: Boolean,
             bitmap: Bitmap? = null,
             thresholds: DetectionThresholds = DetectionThresholds(),
-            requireVerifierForStrongExplicit: Boolean = false,
+            requireVerifierForStrongExplicit: Boolean = true,
             falsePositiveSuppressed: Boolean = false
         ) = FrameAnalysis(
             frameHash = frameHash,

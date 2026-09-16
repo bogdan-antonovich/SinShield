@@ -1,6 +1,6 @@
-# SinShield
+# SinSheld
 
-**On-device NSFW content shield for Android.** SinShield watches supported social apps and
+**On-device NSFW content shield for Android.** SinSheld watches supported social apps and
 browsers, and when explicit imagery appears on screen it covers it with a blocking overlay — all
 image analysis runs locally on the device, and screenshots never leave the phone. A second,
 independent layer blocks known adult-content websites at the DNS level through a local VPN.
@@ -37,11 +37,11 @@ independent layer blocks known adult-content websites at the DNS level through a
 
 ## 1. What it does
 
-SinShield is a "content shield" built around two independent protections:
+SinSheld is a "content shield" built around two independent protections:
 
 ### a) Screen protection (Accessibility Service)
 For apps whose media cannot be inspected through the accessibility node tree (feed images are not
-plain `ImageView`s), SinShield takes **on-device screenshots** when the screen changes, classifies
+plain `ImageView`s), SinSheld takes **on-device screenshots** when the screen changes, classifies
 what is visible with local ML models, and — only on a confirmed unsafe verdict — draws an opaque
 blocking window over the content.
 
@@ -130,12 +130,13 @@ back via a `Handler`.
    foreground app requests a scan after an **80 ms debounce**. If a scan is already in flight, a
    single "frame pending" bit is set instead of starting a second one.
 2. **Capture.** `ScanScheduler` enforces single-flight + Android's screenshot cooldown, then
-   `FrameScanner` calls `takeScreenshotOfWindow` (API 34+, excludes SinShield's own covers so a
+   `FrameScanner` calls `takeScreenshotOfWindow` (API 34+, excludes SinSheld's own covers so a
    covered-but-now-safe frame can be re-evaluated) or `takeScreenshot` on older APIs. The hardware
    buffer is copied to an `ARGB_8888` bitmap.
 3. **Hash + short-circuit.** The frame is average/difference-hashed (`FrameHasher`). If it matches
    the last known-safe hash, or a remembered false positive, it's treated as SAFE without running
-   the models.
+   the models. Overlay-release checks deliberately bypass this shortcut so each qualifying result
+   is a complete model analysis of a newly captured screenshot.
 4. **Analyze.** Otherwise the correct `AppAnalysisFlow` runs (see §7): whole-screen classify,
    optional localized per-region classify, then combine and (if needed) verify.
 5. **Verdict → overlay.** Back on the main thread, `completeScan` checks freshness, then acts on
@@ -157,7 +158,7 @@ parts sum cleanly: `eventToCapture + captureToBlock = total`.
 
 ## 5. The two machine-learning models
 
-SinShield uses a **fast primary classifier** plus a **slower independent verifier**, both CPU-only
+SinSheld uses a **fast primary classifier** plus a **slower independent verifier**, both CPU-only
 and bundled uncompressed in `assets/` (`noCompress` for `tflite`/`onnx`).
 
 ### Primary: GantMan NSFW MobileNetV2 (TFLite / LiteRT)
@@ -201,8 +202,8 @@ All verdict math is pure and lives in
 - `VerifierPolicy.finalVerdict(...)` applies the second model:
   - A firm **SEMI_NUDE** (Sexy) is trusted on the primary alone; a high verifier score promotes it
     to EXPLICIT.
-  - A decisive **EXPLICIT** (Porn/Hentai) blocks by default; the optional
-    *"Verifier must approve decisive hits"* setting restores a stricter veto.
+  - A decisive **EXPLICIT** (Porn/Hentai) requires verifier approval under the recommended
+    defaults; users can disable *"Verifier must approve decisive hits"* to favor recall.
   - Merely **SUSPICIOUS** candidates require the verifier to agree before they block.
 
 ### Protection levels ([`ProtectionPreferences.kt`](app/src/main/java/com/example/sinshield/ProtectionPreferences.kt))
@@ -210,9 +211,10 @@ All verdict math is pure and lives in
 | Level | Explicit | Suggestive (Sexy) | Verifier | Notes |
 |---|---|---|---|---|
 | Relaxed | 0.95 | 0.96 | 0.90 | Only very confident detections |
+| **Recommended** (default) | 0.93 | 0.92 | 0.86 | Verifier approval required |
 | Balanced | 0.70 | 0.80 | 0.80 | Fewer false alarms |
 | High | 0.55 | 0.65 | 0.65 | Catches more, may err |
-| **Maximum** (default) | 0.40 | 0.50 | 0.50 | Most sensitive |
+| Maximum | 0.40 | 0.50 | 0.50 | Most sensitive |
 
 Each level also carries lower `suspiciousExplicit` / `suspiciousSemiNude` "watch the next frames"
 bands. Users can override any threshold in **Advanced detection tuning**; overrides are normalized
@@ -269,7 +271,7 @@ Walking one frame all the way through, so the moving parts are concrete:
 4. **Capture.** `FrameScanner` snapshots context (package, window id, event timestamp, the
    accessibility media regions, the resolved `ShieldedScreenMode`, screen signals, the last
    known-safe hash, protection level + thresholds), then takes a **window screenshot** (API 34+,
-   which excludes SinShield's own covers). The hardware buffer is copied to a bitmap.
+   which excludes SinSheld's own covers). The hardware buffer is copied to a bitmap.
 5. **Off-main analysis** (`analyzeFrame` on the inference executor):
    - Difference-hash the frame. If it equals the last known-safe hash or a remembered false
      positive → **SAFE**, models skipped.
@@ -339,7 +341,7 @@ scanner re-scans to confirm the new screen is safe before the shield is removed.
 
 Two important edge cases, both in `FrameScanner`:
 - **CREATION mode** (you're composing a post/story/reel — strong evidence required) **suppresses**
-  even a confirmed unsafe verdict, so SinShield never blocks your *own* draft. It also deliberately
+  even a confirmed unsafe verdict, so SinSheld never blocks your *own* draft. It also deliberately
   does **not** bless those pixels as globally safe, in case they're later posted into a feed.
 - The `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` / node reads let the service tell a transient System-UI or
   keyboard window apart from the real foreground app, so a stray event doesn't stop the scanner.
@@ -383,7 +385,7 @@ Planners turn raw detections into the final crop list:
 ## 9. Overlays and recovery
 
 **[`OverlayManager.kt`](app/src/main/java/com/example/sinshield/OverlayManager.kt)** owns *every*
-window SinShield draws — nothing else in the app talks to `WindowManager`:
+window SinSheld draws — nothing else in the app talks to `WindowManager`:
 - **Localized covers** — per-post opaque covers, moved during scroll and reconciled against media
   nodes on content changes (scroll-peek auto-clear).
 - **App block** — the full-screen shield with recovery buttons.
@@ -394,6 +396,12 @@ what happens once a full-screen block is up: **Return-to-feed**, **Scroll-past**
 **Close-app** actions, Home-feed navigation, Recents dismissal, shielded gesture dispatch, and
 browser exits. It exposes `navigationActionInProgress` / `closingAppInProgress` so the scanner
 keeps the shield above a deliberate task-recreating transition.
+
+Recovery choices appear after a five-second pause. While a full-screen shield is present, ordinary
+accessibility events do not trigger screenshots: scanning resumes only after the user chooses a
+recovery action. The shield is then removed only after three consecutive fresh screenshots each
+pass the complete analysis pipeline. Any suspicious or unsafe result stops that verification,
+resets the clean streak, and restarts the five-second pause before choices return.
 
 The right recovery actions depend on which app surface is visible.
 [`ShieldedApp.kt`](app/src/main/java/com/example/sinshield/ShieldedApp.kt) resolves a
@@ -468,15 +476,15 @@ When a block is shown, the frame's JPEG is prepared as evidence. From the block 
 [`MainActivity.kt`](app/src/main/java/com/example/sinshield/MainActivity.kt) is a single Compose
 screen (theme in `ui/theme/`). It's essentially an **onboarding + settings console**:
 
-- Toggle rows for the four protections (each links out to the correct system settings screen and
-  reflects live permission state on resume): Accessibility, Blocking overlay, Website protection
-  (VPN), Disable battery optimization.
-- **Domain block list** status + manual "Update domain list".
-- **Protection level** slider (Relaxed → Maximum) with a live "Explicit % · Suggestive % · Second
-  model %" readout.
+- A first card containing only the required Accessibility and blocking-overlay permissions.
+- Optional reliability and protection controls follow it: battery/background startup, website
+  protection, Always-on VPN, and failure notifications.
+- **Domain block list** status, persistent user-added domains with removal controls, and a separate
+  manual refresh for the maintained built-in list. Changes reload the running VPN immediately.
 - **Block suggestive content** switch.
-- **Advanced detection tuning**: per-threshold sliders + "Verifier must approve decisive hits" +
-  reset-to-preset. Changes apply to the running scanner automatically.
+- **Advanced detection tuning**: described per-threshold sliders + "Verifier must approve decisive
+  hits" + a return-to-recommended-settings action. Changes apply to the running scanner
+  automatically.
 
 Each setting has a tap-for-details dialog explaining exactly what it does and its privacy posture.
 
@@ -484,14 +492,16 @@ Each setting has a tap-for-details dialog explaining exactly what it does and it
 
 ## 14. Debug instrumentation and timing
 
-Two levels of instrumentation, kept in the codebase but off by default:
+Developer instrumentation is kept in the codebase but off by default:
 
-- **Image dumps** — `ModelDebugDumps.ENABLED` (in
-  [`ModelAnalysisDebugWriter.kt`](app/src/main/java/com/example/sinshield/ModelAnalysisDebugWriter.kt),
-  default **`false`**) gates writing a JPEG per classifier crop, verifier crop, and OpenCV overlay
-  into the app's Pictures debug folders. These are **synchronous encodes on the inference thread**
-  that add ~1.5 s per frame, so they stay off for normal (near-release) runs. They only ever run on
-  a debuggable build. Flip `ENABLED = true` to inspect exactly what the models saw.
+- **Global debug mode** — `GlobalDebugMode.ENABLED` (in
+  [`DebugSettings.kt`](app/src/main/java/com/example/sinshield/DebugSettings.kt)) is the code-only
+  gate for every developer feature. When enabled, the main screen shows a **Debug** card with
+  independent controls for photo dumps, overlay feedback, the overlay dismiss button, and last
+  shutdown diagnostics. No gesture or user-facing setting can reveal the card.
+- **Image dumps** — the Debug card's **Photo dumps** switch gates writing a JPEG per classifier
+  crop, verifier crop, and OpenCV overlay into the app's Pictures debug folders. These are
+  **synchronous encodes on the inference thread** that add ~1.5 s per frame.
 - **`BAN` timing log** — one release-safe `Log.i` line per shown block, measuring the visible→blocked
   latency without the debuggable-only image dumps. All stamps are `uptimeMillis`, so:
   `eventToCaptureMs` (debounce + cooldown + capture queueing) + `captureToBlockMs` (screenshot
@@ -499,7 +509,7 @@ Two levels of instrumentation, kept in the codebase but off by default:
   model-only slice. `provisional=true` marks a cover shown before its confirmation; the matching
   `provisional=false` line follows when finalized.
 
-There's also a rich per-scan diagnostic `Log.i` (tag `SinShield`) in `completeScan` dumping every
+There's also a rich per-scan diagnostic `Log.i` (tag `SinSheld`) in `completeScan` dumping every
 score, threshold, region, and freshness flag.
 
 > **Latency note (from log analysis):** typical event→block was ~4–5 s (up to ~6.5 s when backed
@@ -601,11 +611,11 @@ Notes:
   `NXDOMAIN` for blocklisted hosts and forwarding the rest unchanged.
 - The only network use is forwarding allowed DNS queries and (optionally) refreshing the domain
   blocklist.
-- SinShield can only request Android's Accessibility, overlay, and VPN permissions; the user grants
+- SinSheld can only request Android's Accessibility, overlay, and VPN permissions; the user grants
   and revokes them through system settings.
 
 ---
 
 *Generated as a project overview from source. For the authoritative behavior, the code is the
-source of truth — the `SinShield` logcat tag and the per-scan diagnostic line are the fastest way to
+source of truth — the `SinSheld` logcat tag and the per-scan diagnostic line are the fastest way to
 see the pipeline's live decisions.*

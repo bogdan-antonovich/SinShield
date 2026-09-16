@@ -45,14 +45,21 @@ class VerifierPolicyTest {
     }
 
     @Test
-    fun missingVerifierDoesNotDiscardDecisiveExplicitByDefault() {
+    fun missingVerifierDoesNotDiscardDecisiveExplicitWhenApprovalIsDisabled() {
         val candidate = StageOneResult(
             ContentVerdict.EXPLICIT,
             ContentVerdict.EXPLICIT,
             listOf("Porn")
         )
 
-        assertEquals(ContentVerdict.EXPLICIT, VerifierPolicy.finalVerdict(candidate, null))
+        assertEquals(
+            ContentVerdict.EXPLICIT,
+            VerifierPolicy.finalVerdict(
+                candidate,
+                nsfwScore = null,
+                requireVerifierForStrongExplicit = false
+            )
+        )
     }
 
     @Test
@@ -130,7 +137,7 @@ class VerifierPolicyTest {
     }
 
     @Test
-    fun confirmedExplicitCandidateBlocks() {
+    fun explicitCandidateAtRecommendedVerifierThresholdBlocks() {
         val candidate = StageOneResult(
             ContentVerdict.EXPLICIT,
             ContentVerdict.EXPLICIT,
@@ -139,12 +146,12 @@ class VerifierPolicyTest {
 
         assertEquals(
             ContentVerdict.EXPLICIT,
-            VerifierPolicy.finalVerdict(candidate, VerifierPolicy.CONFIRM_THRESHOLD)
+            VerifierPolicy.finalVerdict(candidate, DetectionThresholds().verifier)
         )
     }
 
     @Test
-    fun verifierNsfwMajorityConfirmsExplicitCandidate() {
+    fun verifierNsfwMajorityDoesNotMeetRecommendedThreshold() {
         val candidate = StageOneResult(
             ContentVerdict.EXPLICIT,
             ContentVerdict.EXPLICIT,
@@ -152,7 +159,7 @@ class VerifierPolicyTest {
         )
 
         assertEquals(
-            ContentVerdict.EXPLICIT,
+            ContentVerdict.SAFE,
             VerifierPolicy.finalVerdict(candidate, 0.61f)
         )
     }

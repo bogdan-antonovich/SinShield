@@ -25,4 +25,15 @@ class AdultDomainMatcherTest {
         assertFalse(matcher.isBlocked("safe.test"))
         assertFalse(matcher.isBlocked("notadult-site.test"))
     }
+
+    @Test
+    fun userDomainsAreValidatedAndCanExtendAMatcher() {
+        assertEquals("example.com", AdultDomainMatcher.normalizeUserDomain(" Example.COM. "))
+        assertEquals("xn--bcher-kva.example", AdultDomainMatcher.normalizeUserDomain("bücher.example"))
+        assertEquals(null, AdultDomainMatcher.normalizeUserDomain("https://example.com/page"))
+        assertEquals(null, AdultDomainMatcher.normalizeUserDomain("not-a-domain"))
+
+        val matcher = AdultDomainMatcher.empty().withDomains(listOf("example.com"))
+        assertTrue(matcher.isBlocked("images.example.com"))
+    }
 }

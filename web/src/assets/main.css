@@ -1,0 +1,40 @@
+@import './base.css';
+@import "tailwindcss";
+
+@theme {
+  /* Brand colors — mirror the Android app (Theme.kt) so web + app match.
+     Registering them here also generates utilities:
+     text-primary, bg-primary, text-navy, bg-surface, ring-accent, … */
+  --color-primary: #087CF0;
+  --color-primary-dark: #0A5FB8;
+  --color-accent: #00D782;
+  --color-navy: #002945;
+  --color-surface: #F9FBFF;
+
+  --font-sans: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+}
+
+::selection {
+  background: rgb(8 124 240 / 20%);
+  color: var(--ss-navy);
+}
+
+.app-shell {
+  background: linear-gradient(325deg, #12a6e8 0%, #087cf0 48%, #1c4fd8 100%);
+  background-attachment: fixed;
+}

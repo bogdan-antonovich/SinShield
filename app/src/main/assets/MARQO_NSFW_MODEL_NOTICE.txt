@@ -6,5 +6,5 @@ License: Apache License 2.0
 ONNX export source revision: refs/pr/5
 Bundled model SHA-256: 7b81155313d894bba3a3b9bace059a6da2a0c509d10cea43fcb0b3c5a4edd26d
 
-This independent model is used only to verify candidate frames detected by KillLust's
+This independent model is used only to verify candidate frames detected by SinSheld's
 first-stage classifier. Screenshots and crops remain on the device.

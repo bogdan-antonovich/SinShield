@@ -2,12 +2,12 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_block"
+    android:background="@color/sinshield_surface"
     android:clickable="true"
     android:focusable="true"
     android:importantForAccessibility="yes"
-    android:paddingHorizontal="28dp"
-    android:paddingVertical="40dp">
+    android:paddingHorizontal="32dp"
+    android:paddingVertical="36dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -16,33 +16,56 @@
         android:gravity="center"
         android:orientation="vertical">
 
-        <ImageView
-            android:layout_width="92dp"
-            android:layout_height="92dp"
-            android:contentDescription="@null"
-            android:src="@mipmap/ic_launcher_round" />
-
-        <TextView
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:contentDescription="@string/app_name"
+            android:gravity="center"
+            android:importantForAccessibility="yes"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/brand_sin"
+                android:textColor="@color/sinshield_navy"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/brand_shield"
+                android:textColor="@color/sinshield_primary"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="36dp"
             android:gravity="center"
             android:text="@string/adult_website_blocked"
-            android:textColor="#FFFFFFFF"
-            android:textSize="27sp"
+            android:textColor="@color/sinshield_navy"
+            android:textSize="30sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="16dp"
             android:gravity="center"
+            android:lineSpacingExtra="3dp"
             android:text="@string/adult_website_blocked_explanation"
-            android:textColor="#FFD0D5DD"
-            android:textSize="16sp" />
+            android:textColor="#BF082D48"
+            android:textSize="17sp" />
 
         <LinearLayout
-            android:layout_width="300dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
             android:orientation="vertical">
@@ -50,17 +73,25 @@
             <Button
                 android:id="@+id/open_safe_page"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/leave_site_and_open_safe_page" />
+                android:layout_height="56dp"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/leave_site_and_open_safe_page"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/go_back"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="56dp"
                 android:layout_marginTop="10dp"
-                android:backgroundTint="#FF353A43"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
                 android:text="@string/go_back"
-                android:textColor="#FFFFFFFF" />
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
 
         </LinearLayout>
 

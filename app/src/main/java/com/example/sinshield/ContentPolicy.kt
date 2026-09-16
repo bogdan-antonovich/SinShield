@@ -14,24 +14,24 @@ internal data class StageOneResult(
 )
 
 internal data class DetectionThresholds(
-    val explicit: Float = 0.40f,
-    val semiNude: Float = 0.50f,
-    val suspiciousExplicit: Float = 0.25f,
-    val suspiciousSemiNude: Float = 0.20f,
-    val verifier: Float = 0.50f
+    val explicit: Float = 0.93f,
+    val semiNude: Float = 0.92f,
+    val suspiciousExplicit: Float = 0.75f,
+    val suspiciousSemiNude: Float = 0.55f,
+    val verifier: Float = 0.86f
 ) {
     /** Keeps persisted tuning values finite, useful, and internally ordered. */
     fun normalized(): DetectionThresholds {
-        val safeExplicit = explicit.finiteOr(0.40f).coerceIn(0.10f, 0.99f)
-        val safeSemiNude = semiNude.finiteOr(0.50f).coerceIn(0.10f, 0.99f)
+        val safeExplicit = explicit.finiteOr(0.93f).coerceIn(0.10f, 0.99f)
+        val safeSemiNude = semiNude.finiteOr(0.92f).coerceIn(0.10f, 0.99f)
         return copy(
             explicit = safeExplicit,
             semiNude = safeSemiNude,
-            suspiciousExplicit = suspiciousExplicit.finiteOr(0.25f)
+            suspiciousExplicit = suspiciousExplicit.finiteOr(0.75f)
                 .coerceIn(0.05f, safeExplicit),
-            suspiciousSemiNude = suspiciousSemiNude.finiteOr(0.20f)
+            suspiciousSemiNude = suspiciousSemiNude.finiteOr(0.55f)
                 .coerceIn(0.05f, safeSemiNude),
-            verifier = verifier.finiteOr(0.50f).coerceIn(0.50f, 0.99f)
+            verifier = verifier.finiteOr(0.86f).coerceIn(0.50f, 0.99f)
         )
     }
 }
@@ -40,12 +40,12 @@ private fun Float.finiteOr(fallback: Float): Float = if (isFinite()) this else f
 
 /** Converts the five MobileNet outputs into the policy used by both app and service. */
 internal object ContentPolicy {
-    const val EXPLICIT_THRESHOLD = 0.40f
-    const val SEMI_NUDE_THRESHOLD = 0.50f
-    const val SUSPICIOUS_EXPLICIT_THRESHOLD = 0.25f
+    const val EXPLICIT_THRESHOLD = 0.93f
+    const val SEMI_NUDE_THRESHOLD = 0.92f
+    const val SUSPICIOUS_EXPLICIT_THRESHOLD = 0.75f
     // Full-screen social feeds dilute the model's Sexy score with surrounding text/navigation.
     // This lower value only enters the multi-frame confirmation path; it never blocks immediately.
-    const val SUSPICIOUS_SEMI_NUDE_THRESHOLD = 0.20f
+    const val SUSPICIOUS_SEMI_NUDE_THRESHOLD = 0.55f
 
     fun evaluate(
         scores: FloatArray,
@@ -127,8 +127,8 @@ internal object VerifierPolicy {
     fun finalVerdict(
         candidate: StageOneResult,
         nsfwScore: Float?,
-        confirmThreshold: Float = CONFIRM_THRESHOLD,
-        requireVerifierForStrongExplicit: Boolean = false
+        confirmThreshold: Float = DetectionThresholds().verifier,
+        requireVerifierForStrongExplicit: Boolean = true
     ): ContentVerdict {
         if (candidate.verdict == ContentVerdict.SAFE) return ContentVerdict.SAFE
 
@@ -143,10 +143,9 @@ internal object VerifierPolicy {
             return if (verifierAgrees) ContentVerdict.EXPLICIT else ContentVerdict.SEMI_NUDE
         }
 
-        // A decisive Porn/Hentai result from the primary model is sufficient by default. The old
-        // behavior let any verifier disagreement (or a verifier load failure) turn even a 99% hit
-        // into SAFE, which caused the most serious false negatives. Users who value false-positive
-        // avoidance above recall can restore that veto from Advanced detection tuning.
+        // A decisive Porn/Hentai result from the primary model can be sufficient when verifier
+        // approval is disabled. Recommended tuning keeps approval enabled to reduce false alarms;
+        // users can opt out when they value recall over false-positive avoidance.
         if (candidate.verdict == ContentVerdict.EXPLICIT &&
             !requireVerifierForStrongExplicit
         ) {

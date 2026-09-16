@@ -20,6 +20,19 @@ android {
     }
 
     buildTypes {
+        create("prodTest") {
+            initWith(getByName("release"))
+            // Production-like runtime behavior with a local-only certificate. This variant is for
+            // measuring startup, process death, and Accessibility recovery without a debugger or a
+            // Play Console upload; it must never be published.
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            versionNameSuffix = "-prodtest"
+            matchingFallbacks += "release"
+            optimization {
+                enable = true
+            }
+        }
         release {
             optimization {
                 enable = false
@@ -31,6 +44,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
     androidResources {
@@ -48,6 +62,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

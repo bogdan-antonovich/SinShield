@@ -1,0 +1,35 @@
+/**
+ * Switzer by Jérémie Hornus / Indian Type Foundry (Fontshare).
+ * Licensed under the ITF Free Font License.
+ */
+@font-face {
+  font-family: 'Switzer';
+  src: url('./fonts/Switzer-Variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Switzer';
+  src: url('./fonts/Switzer-VariableItalic.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --ss-primary: #087CF0;        /* bright blue — buttons, links, brand */
+  --ss-primary-dark: #0A5FB8;   /* hover/pressed */
+  --ss-accent: #00D782;         /* mint green — highlights, "protected" states */
+  --ss-navy: #082D48;           /* headings / body text */
+
+  --color-background: #E5EFFF;  /* light blue page bg */
+  --color-background-soft: #F9FBFF;
+  --color-background-mute: #DCE8FB;
+
+  --color-heading: var(--ss-navy);
+  --color-text: var(--ss-navy);
+
+  --section-gap: 160px;
+}

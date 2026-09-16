@@ -34,7 +34,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SinShield">
+        android:theme="@style/Theme.SinSheld">
 
         <activity
             android:name=".MainActivity"
@@ -76,6 +76,10 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="on_device_adult_domain_dns_filtering" />
+
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="true" />
         </service>
 
         <receiver

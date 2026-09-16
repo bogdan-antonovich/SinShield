@@ -16,7 +16,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun SinShieldTheme(
+fun SinSheldTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(

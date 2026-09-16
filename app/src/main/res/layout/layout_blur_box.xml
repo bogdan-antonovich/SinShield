@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FF101217"
+    android:background="@color/sinshield_surface"
     android:clickable="true"
     android:focusable="true"
     android:focusableInTouchMode="true"
@@ -15,7 +15,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/sinshield_navy"
         android:textSize="26sp"
         android:textStyle="bold" />
 
@@ -26,7 +26,7 @@
         android:layout_marginTop="12dp"
         android:gravity="center"
         android:text="@string/unsafe_screen_hidden"
-        android:textColor="#FFCACDD5"
+        android:textColor="#BF082D48"
         android:textSize="16sp" />
 
     <TextView
@@ -34,7 +34,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="28dp"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/sinshield_primary"
         android:textSize="16sp" />
 
     <Button
@@ -42,6 +42,10 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
+        android:background="@drawable/bg_overlay_button_primary"
+        android:backgroundTint="@null"
         android:enabled="false"
-        android:text="@string/dismiss" />
+        android:text="@string/dismiss"
+        android:textAllCaps="false"
+        android:textColor="@color/white" />
 </LinearLayout>

@@ -100,6 +100,22 @@ class NavigationRecoveryPolicyTest {
     }
 
     @Test
+    fun xHomeClickCompletesNavigationInsideUnchangedWindow() {
+        assertTrue(
+            NavigationRecoveryPolicy.reachedHomeFeed(
+                foregroundPackage = ShieldedApp.X.packageName,
+                appPackage = ShieldedApp.X.packageName,
+                resultingMode = ShieldedScreenMode.UNKNOWN,
+                taskRestarted = false,
+                homeTabClicked = true,
+                homeTabClickIsConclusive = ShieldedApp.X.homeTabClickIsConclusive,
+                startingWindowId = 451,
+                resultingWindowId = 451
+            )
+        )
+    }
+
+    @Test
     fun currentSafeFrameClearsAnOlderWindowBlockForSameApp() {
         assertTrue(
             NavigationRecoveryPolicy.shouldClearAppBlockOnSafeFrame(

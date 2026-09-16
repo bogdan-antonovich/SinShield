@@ -1,4 +1,4 @@
-# KillLust offline starter list.
+# SinSheld offline starter list.
 # Format: one domain per line. The app replaces this seed with StevenBlack's maintained
 # porn-only hosts list after a validated update from:
 # https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts

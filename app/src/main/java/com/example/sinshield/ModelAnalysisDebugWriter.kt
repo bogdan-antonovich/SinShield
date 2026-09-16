@@ -18,19 +18,9 @@ import java.util.Locale
 import kotlin.math.max
 import androidx.core.graphics.createBitmap
 
-/**
- * Master switch for the on-device model/OpenCV debug dumps ([ModelAnalysisDebugWriter] and
- * [OpenCvDetectionDebugWriter]). These write a JPEG per classifier crop, verifier crop, and OpenCV
- * overlay into the app's Pictures debug folders — synchronous encodes on the inference thread that
- * add-on the order of ~1.5s per frame. Kept off by default so normal runs are fast; flip [ENABLED]
- * to true (on a debuggable build) when you need to inspect exactly what the models saw.
- */
-internal object ModelDebugDumps {
-    const val ENABLED = false
-}
-
 /** Creates bounded debug captures of actual model inputs and their final localized-region map. */
 internal class ModelAnalysisDebugWriter(context: Context) {
+    private val applicationContext = context.applicationContext
     private val outputDirectory = File(
         context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir,
         DIRECTORY_NAME
@@ -39,6 +29,7 @@ internal class ModelAnalysisDebugWriter(context: Context) {
 
     @Synchronized
     fun beginFrame(frameHash: Long): ModelAnalysisDebugSession? {
+        if (!DebugSettings.photoDumps(applicationContext)) return null
         val now = SystemClock.elapsedRealtime()
         if (lastCaptureElapsedMs != Long.MIN_VALUE &&
             now - lastCaptureElapsedMs < CAPTURE_INTERVAL_MS
@@ -79,7 +70,7 @@ internal class ModelAnalysisDebugWriter(context: Context) {
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val DIRECTORY_NAME = "model-analysis-debug"
         private const val FILE_PREFIX = "model_"
         private const val CAPTURE_INTERVAL_MS = 1_000L
@@ -207,7 +198,7 @@ internal class ModelAnalysisDebugSession(private val captureDirectory: File) {
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val JPEG_QUALITY = 94
         private val CLASS_NAMES = arrayOf("Drawings", "Hentai", "Neutral", "Porn", "Sexy")
 

@@ -63,37 +63,79 @@ internal class RecoveryController(
     var closingAppInProgress = false
         private set
 
+    private var recoveryVerificationInProgress = false
+    private var recoveryVerificationTimeout: Runnable? = null
+
     /** Resets the navigation flags this class owns, then has OverlayManager remove the window. */
     fun clearAppBlock() {
+        cancelRecoveryVerificationTimeout()
         navigationActionInProgress = false
         closingAppInProgress = false
+        recoveryVerificationInProgress = false
         overlays.removeAppBlockingOverlay()
     }
 
     fun returnToAppFeed(app: ShieldedApp) {
+        val overlay = overlays.appOverlay ?: return
         navigationActionInProgress = true
         closingAppInProgress = false
-        overlays.appOverlay?.view?.let { view ->
+        recoveryVerificationInProgress = false
+        overlay.view.let { view ->
             setActionButtonsEnabled(view, false)
             view.findViewById<TextView>(R.id.blocked_explanation)
                 .setText(R.string.returning_to_feed)
         }
-        navigateToVisibleHomeFeed(app) { reachedFeed ->
-            Log.i(TAG, "Return to feed completed; app=${app.packageName} homeAction=$reachedFeed")
-            if (reachedFeed) {
-                // A scan captured before navigation may still finish after the shield is removed.
-                // Put a generation barrier in front of it so old unsafe pixels cannot recreate
-                // the overlay on the newly opened feed.
-                host.invalidateInFlightScanResults()
-                clearAppBlock()
-                host.resetAdaptiveState()
-                if (host.foregroundPackage == app.packageName) {
-                    host.requestScan(POST_ACTION_SCAN_DELAY_MS)
-                }
+        val navigate = { onComplete: (Boolean) -> Unit ->
+            if (app === ShieldedApp.X) {
+                // X can expose a feed-like screen without an actionable Home node. Never repeat
+                // Back there: one nested-surface Back is the maximum before we stop safely.
+                val backsAllowed = if (overlay.mode.canNavigateBackTowardFeed()) 1 else 0
+                navigateToVisibleHomeFeed(
+                    app = app,
+                    backsRemaining = backsAllowed,
+                    acceptCurrentSurfaceAsFeed = overlay.mode == ShieldedScreenMode.FEED,
+                    onComplete = onComplete
+                )
             } else {
-                showPrimaryActionFailure(R.string.unable_to_return_to_feed)
+                // Instagram's nested viewers can need more than one step before its Home target
+                // becomes visible. Keep the established navigation path for those apps.
+                navigateToVisibleHomeFeed(app, onComplete)
             }
         }
+        navigate { reachedFeed ->
+            Log.i(TAG, "Return to feed completed; app=${app.packageName} homeAction=$reachedFeed")
+            if (reachedFeed) {
+                beginReturnToFeedVerification(app)
+            } else {
+                // Some apps briefly expose no active root while changing tabs. Let that settle
+                // before reporting failure; otherwise a safe scan can remove the cover immediately
+                // after the user has been told navigation failed.
+                handler.postDelayed(
+                    {
+                        host.syncForegroundFromRoot()
+                        if (host.foregroundPackage == app.packageName) {
+                            beginReturnToFeedVerification(app)
+                        } else {
+                            showPrimaryActionFailure(R.string.unable_to_return_to_feed)
+                        }
+                    },
+                    RETURN_NAVIGATION_SETTLE_RETRY_MS
+                )
+            }
+        }
+    }
+
+    private fun beginReturnToFeedVerification(app: ShieldedApp) {
+        if (overlays.appOverlay?.app?.packageName != app.packageName) return
+        // A scan captured before navigation may still finish afterward. Reject it, then keep the
+        // opaque cover visible until a fresh capture has checked the destination.
+        host.invalidateInFlightScanResults()
+        host.resetAdaptiveState()
+        showRecoveryVerification(
+            overlay = overlays.appOverlay ?: return,
+            message = R.string.checking_returned_feed
+        )
+        host.requestPostRecoveryScan(app.packageName, POST_ACTION_SCAN_DELAY_MS)
     }
 
     fun performPrimaryRecoveryAction(app: ShieldedApp) {
@@ -113,6 +155,9 @@ internal class RecoveryController(
 
     private fun scrollPastContent(app: ShieldedApp) {
         val overlay = overlays.appOverlay ?: return
+        navigationActionInProgress = true
+        closingAppInProgress = false
+        recoveryVerificationInProgress = false
         setActionButtonsEnabled(overlay.view, false)
         overlay.view.findViewById<TextView>(R.id.blocked_explanation)
             .setText(R.string.scrolling_past_content)
@@ -329,8 +374,10 @@ internal class RecoveryController(
     }
 
     fun closeApp(app: ShieldedApp) {
+        cancelRecoveryVerificationTimeout()
         navigationActionInProgress = true
         closingAppInProgress = true
+        recoveryVerificationInProgress = false
         overlays.appOverlay?.view?.let { view ->
             setActionButtonsEnabled(view, false)
             view.findViewById<TextView>(R.id.blocked_explanation).text =
@@ -359,6 +406,22 @@ internal class RecoveryController(
             app,
             backsRemaining = MAX_BACKS_TO_FIND_HOME,
             taskRestartAvailable = app.restartAtLauncherFallback,
+            acceptCurrentSurfaceAsFeed = false,
+            onComplete = onComplete
+        )
+    }
+
+    private fun navigateToVisibleHomeFeed(
+        app: ShieldedApp,
+        backsRemaining: Int,
+        acceptCurrentSurfaceAsFeed: Boolean,
+        onComplete: (Boolean) -> Unit
+    ) {
+        navigateToVisibleHomeFeed(
+            app = app,
+            backsRemaining = backsRemaining,
+            taskRestartAvailable = false,
+            acceptCurrentSurfaceAsFeed = acceptCurrentSurfaceAsFeed,
             onComplete = onComplete
         )
     }
@@ -367,9 +430,16 @@ internal class RecoveryController(
         app: ShieldedApp,
         backsRemaining: Int,
         taskRestartAvailable: Boolean,
+        acceptCurrentSurfaceAsFeed: Boolean,
         onComplete: (Boolean) -> Unit
     ) {
         host.syncForegroundFromRoot()
+        val foreground = host.foregroundPackage
+        if (foreground != null && foreground != app.packageName) {
+            Log.w(TAG, "Stopped Home navigation after ${app.displayName} lost foreground")
+            onComplete(false)
+            return
+        }
         val startingWindowId = host.foregroundWindowId
         if (clickVisibleHomeTab(app)) {
             handler.postDelayed(
@@ -405,6 +475,7 @@ internal class RecoveryController(
                             app,
                             backsRemaining,
                             taskRestartAvailable,
+                            acceptCurrentSurfaceAsFeed,
                             onComplete
                         )
                     }
@@ -413,17 +484,28 @@ internal class RecoveryController(
             )
             return
         }
+        if (acceptCurrentSurfaceAsFeed) {
+            onComplete(true)
+            return
+        }
         if (taskRestartAvailable) {
             finishHomeNavigationOrRestart(app, taskRestartAvailable, onComplete)
             return
         }
-        navigateBackTowardHome(app, backsRemaining, taskRestartAvailable, onComplete)
+        navigateBackTowardHome(
+            app,
+            backsRemaining,
+            taskRestartAvailable,
+            acceptCurrentSurfaceAsFeed,
+            onComplete
+        )
     }
 
     private fun navigateBackTowardHome(
         app: ShieldedApp,
         backsRemaining: Int,
         taskRestartAvailable: Boolean,
+        acceptCurrentSurfaceAsFeed: Boolean,
         onComplete: (Boolean) -> Unit
     ) {
         if (backsRemaining <= 0 ||
@@ -438,6 +520,7 @@ internal class RecoveryController(
                     app,
                     backsRemaining - 1,
                     taskRestartAvailable,
+                    acceptCurrentSurfaceAsFeed,
                     onComplete
                 )
             },
@@ -672,14 +755,22 @@ internal class RecoveryController(
         handler.postDelayed(
             {
                 val overlay = overlays.appOverlay ?: return@postDelayed
-                setActionButtonsEnabled(overlay.view, true)
-                overlay.view.findViewById<TextView>(R.id.blocked_explanation).apply {
-                    text = ""
-                    visibility = View.GONE
+                val message = when (overlay.mode) {
+                    ShieldedScreenMode.STORY -> R.string.checking_next_story
+                    ShieldedScreenMode.DIRECT_MESSAGE -> R.string.checking_returned_screen
+                    ShieldedScreenMode.LIVE -> R.string.checking_returned_screen
+                    else -> R.string.checking_next_content
                 }
-                host.syncForegroundFromRoot()
+                showRecoveryVerification(overlay, message)
+                // Do not query rootInActiveWindow here. This callback runs on the service main
+                // thread, and a slow/ANR-ing foreground app can hold that Binder call long enough
+                // to freeze both overlay clicks and the verification timeout. Accessibility events
+                // already maintain foregroundPackage; the scanner revalidates package/window state
+                // before accepting any result.
                 if (host.foregroundPackage == overlay.app.packageName) {
                     host.requestPostRecoveryScan(overlay.app.packageName, 0L)
+                } else {
+                    showPrimaryActionFailure(R.string.unable_to_leave_surface)
                 }
             },
             delayMs
@@ -694,11 +785,65 @@ internal class RecoveryController(
 
     private fun showPrimaryActionFailure(message: Int) {
         val overlay = overlays.appOverlay ?: return
+        cancelRecoveryVerificationTimeout()
         navigationActionInProgress = false
         closingAppInProgress = false
+        recoveryVerificationInProgress = false
         setActionButtonsEnabled(overlay.view, true)
         overlay.view.findViewById<TextView>(R.id.blocked_explanation).text =
             service.getString(message, overlay.app.displayName)
+    }
+
+    /** A fresh post-action scan still found blocked content, so leave the cover and choices up. */
+    fun onRecoveryVerificationBlocked(app: ShieldedApp) {
+        val overlay = overlays.appOverlay ?: return
+        if (!recoveryVerificationInProgress || overlay.app.packageName != app.packageName) return
+        cancelRecoveryVerificationTimeout()
+        navigationActionInProgress = false
+        closingAppInProgress = false
+        recoveryVerificationInProgress = false
+        setActionButtonsEnabled(overlay.view, true)
+        overlay.view.findViewById<TextView>(R.id.blocked_explanation).apply {
+            setText(R.string.content_still_covered)
+            visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * Verification may depend on a screenshot callback, a Binder-backed accessibility tree read,
+     * and native inference. None of those APIs guarantees that a result will arrive promptly on
+     * every Android build. Keep Close App available while they run, then restore every recovery
+     * choice if the pipeline does not answer instead of leaving a touch-blocking window forever.
+     */
+    private fun showRecoveryVerification(overlay: AppBlockingOverlay, message: Int) {
+        recoveryVerificationInProgress = true
+        setActionButtonsEnabled(overlay.view, false)
+        overlay.view.findViewById<Button>(R.id.close_app).isEnabled = true
+        overlay.view.findViewById<TextView>(R.id.blocked_explanation).apply {
+            setText(message)
+            visibility = View.VISIBLE
+        }
+        armRecoveryVerificationTimeout(overlay.app)
+    }
+
+    private fun armRecoveryVerificationTimeout(app: ShieldedApp) {
+        cancelRecoveryVerificationTimeout()
+        val timeout = Runnable {
+            recoveryVerificationTimeout = null
+            val overlay = overlays.appOverlay ?: return@Runnable
+            if (!recoveryVerificationInProgress || overlay.app.packageName != app.packageName) {
+                return@Runnable
+            }
+            Log.e(TAG, "Recovery verification timed out for ${app.packageName}; restoring actions")
+            showPrimaryActionFailure(R.string.recovery_verification_timed_out)
+        }
+        recoveryVerificationTimeout = timeout
+        handler.postDelayed(timeout, RECOVERY_VERIFICATION_TIMEOUT_MS)
+    }
+
+    private fun cancelRecoveryVerificationTimeout() {
+        recoveryVerificationTimeout?.let(handler::removeCallbacks)
+        recoveryVerificationTimeout = null
     }
 
     private fun setActionButtonsEnabled(view: View, enabled: Boolean) {
@@ -737,7 +882,7 @@ internal class RecoveryController(
     }
 
     companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val MAX_ACCESSIBILITY_NODES = 400
         private const val MAX_ACTION_PARENT_DEPTH = 8
         private const val MAX_BACKS_TO_FIND_HOME = 4
@@ -754,7 +899,9 @@ internal class RecoveryController(
         private const val STORY_SKIP_Y_PERCENT = 0.48f
         private const val STORY_SKIP_TAP_DURATION_MS = 60L
         private const val POST_ACTION_SCAN_DELAY_MS = 450L
+        private const val RECOVERY_VERIFICATION_TIMEOUT_MS = 12_000L
         private const val POST_HOME_CLICK_DELAY_MS = 500L
+        private const val RETURN_NAVIGATION_SETTLE_RETRY_MS = 450L
         private const val TASK_RESTART_SETTLE_MS = 1_200L
         private const val BACK_SETTLE_DELAY_MS = 550L
         private const val HOME_SETTLE_DELAY_MS = 350L
@@ -765,6 +912,18 @@ internal class RecoveryController(
         private const val SAFE_PAGE_OPEN_DELAY_MS = 250L
         private const val SAFE_PAGE_URL = "https://www.google.com/"
     }
+}
+
+private fun ShieldedScreenMode.canNavigateBackTowardFeed(): Boolean = when (this) {
+    ShieldedScreenMode.PROFILE_OR_POST,
+    ShieldedScreenMode.STORY,
+    ShieldedScreenMode.REELS,
+    ShieldedScreenMode.EXPLORE,
+    ShieldedScreenMode.DIRECT_MESSAGE,
+    ShieldedScreenMode.LIVE -> true
+    ShieldedScreenMode.FEED,
+    ShieldedScreenMode.CREATION,
+    ShieldedScreenMode.UNKNOWN -> false
 }
 
 private data class VerticalScrollTarget(

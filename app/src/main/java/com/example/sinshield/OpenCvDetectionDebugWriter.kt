@@ -32,6 +32,7 @@ internal data class OpenCvDebugStages(
 
 /** Writes bounded, rate-limited, timestamped visualizations of the complete OpenCV flow. */
 internal class OpenCvDetectionDebugWriter(context: Context) {
+    private val applicationContext = context.applicationContext
     private val outputDirectory = File(
         context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir,
         DIRECTORY_NAME
@@ -43,6 +44,7 @@ internal class OpenCvDetectionDebugWriter(context: Context) {
         regions: List<DetectionRegion>,
         stages: OpenCvDebugStages
     ) {
+        if (!DebugSettings.photoDumps(applicationContext)) return
         val now = SystemClock.elapsedRealtime()
         if (lastCaptureElapsedMs != Long.MIN_VALUE && now - lastCaptureElapsedMs < CAPTURE_INTERVAL_MS) {
             return
@@ -220,7 +222,7 @@ internal class OpenCvDetectionDebugWriter(context: Context) {
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val DIRECTORY_NAME = "opencv-debug"
         private const val FILE_PREFIX = "opencv_"
         private const val CAPTURE_INTERVAL_MS = 1_000L

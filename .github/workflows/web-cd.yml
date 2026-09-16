@@ -1,0 +1,115 @@
+name: Web CD
+
+on:
+  workflow_run:
+    workflows: ["Web CI"]
+    types: [completed]
+    branches: [master]
+
+concurrency:
+  group: sinshield-web-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out verified revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set deployment tag
+        run: echo "TAG=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+        env:
+          GITHUB_SHA: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: web
+          file: web/docker/prod.Dockerfile
+          push: true
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/sinshield-web:${{ env.TAG }}
+            ${{ vars.DOCKERHUB_USERNAME }}/sinshield-web:latest
+          cache-from: type=gha,scope=sinshield-web-production
+          cache-to: type=gha,mode=max,scope=sinshield-web-production
+
+      - name: Copy deployment manifest
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: web/docker/docker-compose.yml
+          target: ~/sinshield-web/
+          strip_components: 2
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          TAG: ${{ env.TAG }}
+          DOCKER_REGISTRY: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          WEB_PORT: ${{ vars.WEB_PORT }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: TAG,DOCKER_REGISTRY,DOCKERHUB_TOKEN,WEB_PORT
+          script: |
+            set -eu
+
+            echo "$DOCKERHUB_TOKEN" | docker login \
+              --username "$DOCKER_REGISTRY" \
+              --password-stdin
+
+            cd ~/sinshield-web
+
+            export TAG DOCKER_REGISTRY WEB_PORT
+            docker stack deploy \
+              --with-registry-auth \
+              --prune \
+              --compose-file docker-compose.yml \
+              sinshield-web
+
+            service="sinshield-web_web"
+            attempts=0
+            max_attempts=30
+
+            while [ "$attempts" -lt "$max_attempts" ]; do
+              replicas="$(docker service ls --filter "name=$service" --format '{{.Replicas}}')"
+              running="${replicas%%/*}"
+              desired="${replicas##*/}"
+
+              if [ -n "$replicas" ] && [ "$desired" != "0" ] && [ "$running" = "$desired" ]; then
+                echo "Deployment healthy: $replicas replicas running."
+                docker image prune --force
+                exit 0
+              fi
+
+              attempts=$((attempts + 1))
+              echo "Waiting for deployment ($attempts/$max_attempts): ${replicas:-not started}"
+              sleep 10
+            done
+
+            docker service ps "$service" --no-trunc
+            echo "Deployment did not become healthy in time."
+            exit 1

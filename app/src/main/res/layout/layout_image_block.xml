@@ -16,12 +16,22 @@
         android:paddingVertical="12dp">
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/brand_wordmark"
+            android:textColor="@color/sinshield_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
             android:id="@+id/image_block_reason"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="center"
             android:text="@string/unsafe_image_hidden"
-            android:textColor="#FFFFFFFF"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/sinshield_navy"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -31,7 +41,7 @@
             android:layout_marginTop="6dp"
             android:gravity="center"
             android:text="@string/scroll_to_continue"
-            android:textColor="#FFB9CAD3"
+            android:textColor="#B3082D48"
             android:textSize="13sp" />
 
     </LinearLayout>

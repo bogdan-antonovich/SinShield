@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -33,20 +35,48 @@ class AdultContentVpnService : VpnService() {
     private var upstreamServers: List<InetAddress> = emptyList()
     private val packetIdentification = AtomicInteger(1)
     private val recentlyReported = LinkedHashMap<String, Long>()
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopVpn()
-            return START_NOT_STICKY
+    private val handler = Handler(Looper.getMainLooper())
+    private var stopping = false
+    private var reconnectAttempt = 0
+    private val healthHeartbeat = object : Runnable {
+        override fun run() {
+            if (!isRunning || stopping) return
+            ProtectionHealthMonitor.recordVpnRunning(this@AdultContentVpnService)
+            handler.postDelayed(this, HEALTH_HEARTBEAT_INTERVAL_MS)
         }
-        if (intent?.action == ACTION_RELOAD_LIST) {
-            matcher = AdultDomainListRepository.load(this)
-            Log.i(TAG, "Reloaded ${matcher.size} blocked domains")
-            return START_STICKY
-        }
-        if (tunnel != null) return START_STICKY
+    }
+    private val reconnect = Runnable {
+        if (!stopping && tunnel == null) establishTunnel()
+    }
 
+    private fun quickStart(intent: Intent): Int? {
+        return when (intent.action) {
+            ACTION_STOP -> {
+                stopVpn()
+                Log.i(TAG, "Stopped VPN")
+                START_NOT_STICKY
+            }
+
+            ACTION_RELOAD_LIST -> {
+                matcher = AdultDomainListRepository.load(this)
+                Log.i(TAG, "Reloaded ${matcher.size} blocked domains")
+                START_STICKY
+            }
+
+            ACTION_REFRESH_STATUS -> {
+                recordAlwaysOnStatus()
+                broadcastState(isRunning)
+                Log.i(TAG, "Refreshed VPN status")
+                START_STICKY
+            }
+
+            else -> null
+        }
+    }
+
+    fun regularStart(): Int {
         val activeNotification = notification(getString(R.string.vpn_notification_active))
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -56,7 +86,10 @@ class AdultContentVpnService : VpnService() {
         } else {
             startForeground(NOTIFICATION_ID, activeNotification)
         }
+        Log.i(TAG, "Started foreground service")
+
         matcher = AdultDomainListRepository.load(this)
+        recordAlwaysOnStatus()
         establishTunnel()
         // The matcher is already loaded above. Only swap it out when a refresh actually downloaded
         // a newer list (a distinct instance); when the list is still fresh, refreshIfStale hands
@@ -65,6 +98,16 @@ class AdultContentVpnService : VpnService() {
             result.matcher?.takeIf { it !== matcher }?.let { matcher = it }
         }
         return START_STICKY
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null) { return START_NOT_STICKY }
+
+        quickStart(intent)?.let { return it }
+
+        if (tunnel != null) { return START_STICKY }
+
+        return regularStart()
     }
 
     private fun establishTunnel() {
@@ -90,7 +133,7 @@ class AdultContentVpnService : VpnService() {
             .addDnsServer(VPN_DNS_ADDRESS)
             .addRoute(VPN_DNS_ADDRESS, 32)
             .setBlocking(true)
-        // Keep SinShield's own traffic out of the tunnel so forwarding sockets reach the network
+        // Keep SinSheld's own traffic out of the tunnel so forwarding sockets reach the network
         // directly rather than recursing through this service.
         runCatching { builder.addDisallowedApplication(packageName) }
         tunnel = runCatching { builder.establish() }
@@ -98,43 +141,64 @@ class AdultContentVpnService : VpnService() {
             .getOrNull()
         if (tunnel == null) {
             Log.e(TAG, "Android did not establish the VPN interface")
-            ProtectionHealthMonitor.recordVpnFailure(this)
-            stopVpn()
+            tunnelFailed()
             return
         }
 
+        reconnectAttempt = 0
         isRunning = true
         ProtectionHealthMonitor.recordVpnRunning(this)
+        getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            notification(getString(R.string.vpn_notification_active))
+        )
+        handler.removeCallbacks(healthHeartbeat)
+        healthHeartbeat.run()
         broadcastState(true)
-        worker = Thread(::processPackets, "SinShield-DNS").apply { start() }
+        worker = Thread(::processPackets, "SinSheld-DNS").apply { start() }
         Log.i(TAG, "DNS VPN active with ${matcher.size} blocked domains")
     }
 
     private fun processPackets() {
-        val descriptor = tunnel ?: return
+        val descriptor = tunnel
+            ?: throw IllegalStateException("VPN tunnel is not established")
+
         val input = FileInputStream(descriptor.fileDescriptor)
         val output = FileOutputStream(descriptor.fileDescriptor)
         val packetBuffer = ByteArray(32_767)
         try {
+
             while (!Thread.currentThread().isInterrupted) {
                 val length = input.read(packetBuffer)
-                if (length <= 0) continue
-                val request = Ipv4UdpPacketCodec.parse(packetBuffer, length) ?: continue
-                if (request.destinationPort != DNS_PORT) continue
-                val queryName = DnsMessageCodec.queryName(request.payload)
-                val blocked = queryName != null && matcher.isBlocked(queryName)
-                val dnsResponse = when {
-                    blocked -> DnsMessageCodec.nxdomainResponse(request.payload)
-                    else -> forward(request.payload)
-                        ?: DnsMessageCodec.serverFailureResponse(request.payload)
-                } ?: continue
-                if (blocked) reportBlockedDomain(checkNotNull(queryName))
-                val response = Ipv4UdpPacketCodec.response(
-                    request,
-                    dnsResponse,
-                    packetIdentification.getAndIncrement()
-                )
-                output.write(response)
+
+                if (length > 0) {
+                    Ipv4UdpPacketCodec.parse(packetBuffer, length)
+                        ?.takeIf { it.destinationPort == DNS_PORT }
+                        ?.let { request ->
+                            val queryName = DnsMessageCodec.queryName(request.payload)
+                            val blocked = queryName?.let(matcher::isBlocked) == true
+
+                            val dnsResponse = if (blocked) {
+                                DnsMessageCodec.nxdomainResponse(request.payload)
+                            } else {
+                                forward(request.payload)
+                            }
+
+                            dnsResponse?.let { responsePayload ->
+                                if (blocked) {
+                                    reportBlockedDomain(queryName)
+                                }
+
+                                val response = Ipv4UdpPacketCodec.response(
+                                    request,
+                                    responsePayload,
+                                    packetIdentification.getAndIncrement()
+                                )
+
+                                output.write(response)
+                            }
+                        }
+                }
             }
         } catch (failure: Throwable) {
             if (tunnel != null) Log.w(TAG, "DNS packet loop stopped", failure)
@@ -143,34 +207,65 @@ class AdultContentVpnService : VpnService() {
             runCatching { output.close() }
             // stopVpn clears the tunnel before interrupting the thread. If it is still present,
             // the packet loop ended unexpectedly and website protection is no longer functional.
-            if (tunnel != null) {
-                ProtectionHealthMonitor.recordVpnFailure(this)
-                stopVpn()
-            }
+            handler.post { packetLoopEnded(descriptor) }
         }
+    }
+
+    private fun packetLoopEnded(descriptor: ParcelFileDescriptor) {
+        if (stopping || tunnel !== descriptor) return
+        Log.w(TAG, "DNS packet loop ended unexpectedly; reconnecting")
+        tunnel = null
+        worker = null
+        runCatching { descriptor.close() }
+        tunnelFailed()
+    }
+
+    private fun tunnelFailed() {
+        isRunning = false
+        handler.removeCallbacks(healthHeartbeat)
+        broadcastState(false)
+        ProtectionHealthMonitor.recordVpnFailure(this)
+        if (stopping) return
+        getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            notification(getString(R.string.vpn_notification_reconnecting))
+        )
+        val delay = VpnReconnectPolicy.delayForAttempt(reconnectAttempt)
+        reconnectAttempt++
+        handler.removeCallbacks(reconnect)
+        handler.postDelayed(reconnect, delay)
     }
 
     private fun forward(query: ByteArray): ByteArray? {
         for (server in upstreamServers) {
             try {
                 DatagramSocket().use { socket ->
-                    // protect() excludes this socket from the VPN, so the forwarded query goes out
-                    // over the real network instead of back into the tunnel we are servicing.
                     if (!protect(socket)) return@use
+
                     socket.soTimeout = DNS_TIMEOUT_MS
-                    socket.send(DatagramPacket(query, query.size, server, DNS_PORT))
+                    socket.send(
+                        DatagramPacket(query, query.size, server, DNS_PORT)
+                    )
+
                     val response = ByteArray(MAX_DNS_RESPONSE_BYTES)
                     val packet = DatagramPacket(response, response.size)
+
                     socket.receive(packet)
+
                     return response.copyOf(packet.length)
                 }
             } catch (_: SocketTimeoutException) {
-                // Try the next resolver.
+                // Try next server
             } catch (failure: Exception) {
-                Log.w(TAG, "DNS forwarding to ${server.hostAddress} failed", failure)
+                Log.w(
+                    TAG,
+                    "DNS forwarding to ${server.hostAddress} failed",
+                    failure
+                )
             }
         }
-        return null
+
+        return DnsMessageCodec.serverFailureResponse(query)
     }
 
     private fun reportBlockedDomain(domain: String) {
@@ -225,19 +320,25 @@ class AdultContentVpnService : VpnService() {
             Intent(this, AdultContentVpnService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = Notification.Builder(this, NOTIFICATION_CHANNEL)
+            .setSmallIcon(R.drawable.sinshield_notification)
+            .setColor(getColor(R.color.sinshield_primary))
             .setContentTitle(getString(R.string.website_protection_active))
             .setContentText(content)
             .setContentIntent(openApp)
             .setOngoing(true)
-            .addAction(
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !isAlwaysOn) {
+            builder.addAction(
                 Notification.Action.Builder(null, getString(R.string.stop), stopVpn).build()
             )
-            .build()
+        }
+        return builder.build()
     }
 
     private fun stopVpn() {
+        stopping = true
+        handler.removeCallbacks(reconnect)
+        handler.removeCallbacks(healthHeartbeat)
         val descriptor = tunnel
         tunnel = null
         worker?.interrupt()
@@ -254,7 +355,17 @@ class AdultContentVpnService : VpnService() {
             Intent(ACTION_STATE_CHANGED)
                 .setPackage(packageName)
                 .putExtra(EXTRA_RUNNING, running)
+                .putExtra(
+                    EXTRA_ALWAYS_ON,
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isAlwaysOn
+                )
         )
+    }
+
+    private fun recordAlwaysOnStatus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ProtectionHealthMonitor.recordVpnAlwaysOn(this, isAlwaysOn)
+        }
     }
 
     override fun onRevoke() {
@@ -264,7 +375,18 @@ class AdultContentVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        if (tunnel != null || isRunning) stopVpn()
+        // Do not call stopSelf() here. If Android is reclaiming this sticky service, explicitly
+        // stopping it would cancel the restart that START_STICKY requested.
+        stopping = true
+        handler.removeCallbacks(reconnect)
+        handler.removeCallbacks(healthHeartbeat)
+        val descriptor = tunnel
+        tunnel = null
+        worker?.interrupt()
+        worker = null
+        runCatching { descriptor?.close() }
+        isRunning = false
+        broadcastState(false)
         super.onDestroy()
     }
 
@@ -274,10 +396,12 @@ class AdultContentVpnService : VpnService() {
         const val ACTION_STATE_CHANGED = "com.example.sinshield.action.VPN_STATE_CHANGED"
         const val EXTRA_DOMAIN = "domain"
         const val EXTRA_RUNNING = "running"
+        const val EXTRA_ALWAYS_ON = "always_on"
         private const val ACTION_START = "com.example.sinshield.action.START_VPN"
         private const val ACTION_STOP = "com.example.sinshield.action.STOP_VPN"
         private const val ACTION_RELOAD_LIST = "com.example.sinshield.action.RELOAD_VPN_LIST"
-        private const val TAG = "SinShieldVpn"
+        private const val ACTION_REFRESH_STATUS = "com.example.sinshield.action.REFRESH_VPN_STATUS"
+        private const val TAG = "SinSheldVpn"
         private const val NOTIFICATION_CHANNEL = "sinshield_vpn"
         private const val NOTIFICATION_ID = 2
         private const val VPN_CLIENT_ADDRESS = "10.77.0.1"
@@ -288,6 +412,7 @@ class AdultContentVpnService : VpnService() {
         private const val MAX_DNS_RESPONSE_BYTES = 4_096
         private const val REPORT_COOLDOWN_MS = 4_000L
         private const val MAX_RECENT_REPORTS = 256
+        private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
         private val FALLBACK_DNS = listOf("1.1.1.1", "8.8.8.8")
 
         @Volatile var isRunning: Boolean = false
@@ -314,5 +439,19 @@ class AdultContentVpnService : VpnService() {
                 Intent(context, AdultContentVpnService::class.java).setAction(ACTION_RELOAD_LIST)
             )
         }
+
+        fun refreshStatus(context: Context) {
+            if (!isRunning) return
+            context.startService(
+                Intent(context, AdultContentVpnService::class.java).setAction(ACTION_REFRESH_STATUS)
+            )
+        }
     }
+}
+
+internal object VpnReconnectPolicy {
+    private val delaysMs = longArrayOf(1_000L, 2_000L, 5_000L, 15_000L, 60_000L)
+
+    fun delayForAttempt(attempt: Int): Long =
+        delaysMs[attempt.coerceIn(0, delaysMs.lastIndex)]
 }

@@ -1,0 +1,22 @@
+services:
+  web:
+    image: ${DOCKER_REGISTRY}/sinshield-web:${TAG}
+    ports:
+      - target: 80
+        published: ${WEB_PORT}
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first

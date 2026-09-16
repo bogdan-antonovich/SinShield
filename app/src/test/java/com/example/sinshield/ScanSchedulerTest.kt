@@ -44,7 +44,9 @@ class ScanSchedulerTest {
             onBeginScan = { beginCount++ },
             activeIntervalMs = 100L,
             stableIntervalMs = 250L,
-            backoffStepMs = 100L
+            backoffStepMs = 100L,
+            postCompletionRestMs = 300L,
+            urgentCompletionRestMs = 50L
         )
     }
 
@@ -150,5 +152,30 @@ class ScanSchedulerTest {
         assertEquals(250L, h.scanScheduler.currentIntervalMs)
         h.scanScheduler.backOff()
         assertEquals(250L, h.scanScheduler.currentIntervalMs)
+    }
+
+    @Test
+    fun eventCannotBypassRestMeasuredFromCompletion() {
+        val h = Harness()
+        h.clock[0] = 100L
+        assertEquals(1L, h.scanScheduler.startFlightOrDefer())
+        h.clock[0] = 1_100L // The analysis itself lasted much longer than the capture interval.
+        h.scanScheduler.clearInFlight()
+        h.scanScheduler.enforceCompletionRest(urgent = false)
+
+        h.clock[0] = 1_150L
+        h.scanScheduler.requestScan(10L)
+
+        assertEquals(250L, h.scheduler.lastDelay)
+    }
+
+    @Test
+    fun urgentCompletionUsesShorterButNonzeroRest() {
+        val h = Harness()
+        h.clock[0] = 1_000L
+        h.scanScheduler.enforceCompletionRest(urgent = true)
+        h.scanScheduler.requestScan(0L)
+
+        assertEquals(50L, h.scheduler.lastDelay)
     }
 }

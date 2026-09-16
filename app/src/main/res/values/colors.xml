@@ -7,4 +7,10 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="sinshield_primary">#FF087CF0</color>
+    <color name="sinshield_primary_dark">#FF0A5FB8</color>
+    <color name="sinshield_accent">#FF00D782</color>
+    <color name="sinshield_navy">#FF082D48</color>
+    <color name="sinshield_surface">#FFF9FBFF</color>
+    <color name="sinshield_background">#FFE5EFFF</color>
 </resources>

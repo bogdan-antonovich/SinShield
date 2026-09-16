@@ -22,6 +22,11 @@ internal class AdultDomainMatcher private constructor(
         }
     }
 
+    fun withDomains(additionalDomains: Iterable<String>): AdultDomainMatcher {
+        val additions = additionalDomains.mapNotNull(::normalize)
+        return if (additions.isEmpty()) this else AdultDomainMatcher(domains + additions)
+    }
+
     companion object {
         // Hosts-file columns are separated by runs of spaces/tabs. Compiled once here rather than
         // rebuilt per line so parsing a 70k+ entry blocklist doesn't recompile the pattern on
@@ -55,6 +60,20 @@ internal class AdultDomainMatcher private constructor(
                 }
             }
             return AdultDomainMatcher(parsed)
+        }
+
+        /** Strict validation for domains entered by a user rather than trusted blocklist lines. */
+        fun normalizeUserDomain(value: String): String? {
+            val normalized = normalize(value) ?: return null
+            val labels = normalized.split('.')
+            if (labels.size < 2 || labels.any { label ->
+                    label.isEmpty() || label.length > 63 || label.startsWith('-') ||
+                        label.endsWith('-') || label.any { !it.isLetterOrDigit() && it != '-' }
+                }
+            ) {
+                return null
+            }
+            return normalized.takeUnless { labels.last().all(Char::isDigit) }
         }
 
         private fun normalize(value: String): String? {

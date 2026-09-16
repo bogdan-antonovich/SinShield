@@ -6,6 +6,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.BroadcastReceiver
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -15,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
@@ -48,6 +50,12 @@ class ShieldAccessibilityService : AccessibilityService() {
     // so a busy feed cannot make every completed screenshot look stale.
     private var lastRelevantEventElapsedAt = 0L
     private var lastRelevantEventUptimeAt = 0L
+    private var contentEventsEnabled = false
+    private var inputMethodPackage: String? = null
+    private var eventMetricsStartedAt = SystemClock.elapsedRealtime()
+    private var receivedEventCount = 0
+    private var ignoredEventCount = 0
+    private var maxEventTimeMs = 0L
 
     private lateinit var recovery: RecoveryController
     private lateinit var scanner: FrameScanner
@@ -57,14 +65,11 @@ class ShieldAccessibilityService : AccessibilityService() {
     private val appBlockActions = object : OverlayManager.AppBlockActions {
         override fun onCooldownStarted() = scanner.cancelScheduledScan()
 
-        override fun onCooldownFinished() {
-            // Suspicious results still need one confirmation capture. Final blocks remain idle.
-            if (scanner.hasPendingConfirmation) scanner.requestScan(0L)
-        }
-
         override fun onReturnToFeed(app: ShieldedApp) = recovery.returnToAppFeed(app)
         override fun onPrimaryRecovery(app: ShieldedApp) = recovery.performPrimaryRecoveryAction(app)
         override fun onCloseApp(app: ShieldedApp) = recovery.closeApp(app)
+        override fun onRecoveryVerificationBlocked(app: ShieldedApp) =
+            recovery.onRecoveryVerificationBlocked(app)
         override fun onDismiss(incident: IncidentId) {
             scanner.dismissIncident(incident)
             recovery.clearAppBlock()
@@ -99,6 +104,10 @@ class ShieldAccessibilityService : AccessibilityService() {
 
     override fun onCreate() {
         super.onCreate()
+        inputMethodPackage = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD
+        )?.substringBefore('/')
         overlays = OverlayManager(
             context = this,
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager,
@@ -109,8 +118,7 @@ class ShieldAccessibilityService : AccessibilityService() {
             handler = handler,
             overlays = overlays,
             appBlockActions = appBlockActions,
-            collectMediaRegions = ::collectVisibleMediaRegions,
-            collectScreenSignals = ::collectScreenSignals,
+            collectAccessibilityContext = ::collectScanAccessibilityContext,
             host = object : FrameScanner.Host {
                 override fun syncForegroundFromRoot(): Boolean =
                     this@ShieldAccessibilityService.syncForegroundFromRoot()
@@ -158,30 +166,21 @@ class ShieldAccessibilityService : AccessibilityService() {
             IntentFilter(AdultContentVpnService.ACTION_ADULT_DOMAIN_BLOCKED),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
-        Log.i(TAG, "Service created; model loaded")
+        Log.i(TAG, "Service created; detection models will load on demand")
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        serviceInfo = serviceInfo.apply {
-            eventTypes = eventTypes or
-                AccessibilityEvent.TYPE_VIEW_SCROLLED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED
-            flags = flags or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-        }
+        isConnected = true
+        broadcastConnectionState()
+        updateEventSubscription(includeContentEvents = false)
         startAsForeground()
         handler.removeCallbacks(healthHeartbeat)
         healthHeartbeat.run()
-        syncForegroundFromRoot()
-        if (foregroundPackage in monitoredPackages) {
-            scanner.scheduleConnectedScan()
-        } else {
-            scanner.scheduleModelWarmup()
-        }
+        // Do not query rootInActiveWindow while Android is binding the service. On HyperOS a root
+        // request can wait several seconds for an unresponsive foreground app, making this service
+        // look hung too. The next accessibility event supplies the foreground package and starts
+        // scanning without a cross-process round trip.
         Log.i(
             TAG,
             "Accessibility scanner connected; monitoring ${monitoredPackages.size} packages; " +
@@ -193,12 +192,13 @@ class ShieldAccessibilityService : AccessibilityService() {
         val channelId = "sinshield_active"
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(
-            NotificationChannel(channelId, "KillLust", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(channelId, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
         )
         val notification = Notification.Builder(this, channelId)
-            .setContentTitle("KillLust active")
+            .setContentTitle("${getString(R.string.app_name)} active")
             .setContentText("Monitoring for explicit content")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.sinshield_notification)
+            .setColor(getColor(R.color.sinshield_primary))
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -212,24 +212,60 @@ class ShieldAccessibilityService : AccessibilityService() {
         event ?: return
         if (event.eventType !in relevantEventTypes) return
 
+        val startedAt = SystemClock.elapsedRealtime()
+        receivedEventCount++
+        try {
+            handleAccessibilityEvent(event)
+        } finally {
+            maxEventTimeMs = max(maxEventTimeMs, SystemClock.elapsedRealtime() - startedAt)
+            maybeLogEventMetrics()
+        }
+    }
+
+    private fun handleAccessibilityEvent(event: AccessibilityEvent) {
+
         val eventPackage = event.packageName?.toString()
+        val contentEvent = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+
+        // Keyboard, System UI, and unrelated apps can generate content-change events many times per
+        // second. They cannot affect a protected feed, so do not make a Binder root query for them.
+        if (contentEvent && eventPackage !in monitoredPackages) {
+            ignoredEventCount++
+            return
+        }
+
         val nowElapsed = SystemClock.elapsedRealtime()
         val nowUptime = SystemClock.uptimeMillis()
         val previousPackage = foregroundPackage
         val previousWindow = foregroundWindowId
 
-        // The active root owns foreground identity. X can emit window-state events for transient
-        // System UI/keyboard windows; treating those event packages as the foreground app makes
-        // the scanner stop and never recover. Fall back to the event only if no root is available.
-        val foregroundResolvedFromRoot = syncForegroundFromRoot()
-        if (!foregroundResolvedFromRoot) {
-            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-                eventPackage == foregroundPackage ||
+        // Never call rootInActiveWindow from the accessibility-event callback. The call crosses
+        // into the foreground app and can block for Android's full interaction timeout when that
+        // app is slow or ANR-ing. HyperOS then attributes the blocked callback to this service and
+        // offers to force-stop it, which also clears the user's accessibility grant.
+        //
+        // TYPE_WINDOW_STATE_CHANGED normally identifies an app transition, but accessibility
+        // overlays, System UI, and the keyboard create transient windows without replacing the app
+        // underneath. Treating one of those windows as foreground immediately clears the shield we
+        // just displayed. A real SinShield activity window remains a valid transition.
+        val ownActivityWindow = eventPackage == packageName &&
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.className?.toString() == MainActivity::class.java.name
+        val transientWindow = !ownActivityWindow && (
+            eventPackage == packageName ||
+                eventPackage == SYSTEM_UI_PACKAGE ||
+                eventPackage == ANDROID_PACKAGE ||
+                eventPackage == inputMethodPackage
+            )
+        val eventIdentifiesForeground = eventPackage != null && !transientWindow && (
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventPackage in monitoredPackages ||
                 foregroundPackage == null
-            ) {
-                eventPackage?.let { foregroundPackage = it }
-                if (event.windowId != UNKNOWN_WINDOW_ID) foregroundWindowId = event.windowId
-            }
+            )
+        if (eventIdentifiesForeground) {
+            foregroundPackage = eventPackage
+            if (event.windowId != UNKNOWN_WINDOW_ID) foregroundWindowId = event.windowId
         }
 
         lastRelevantEventElapsedAt = max(lastRelevantEventElapsedAt, nowElapsed)
@@ -269,12 +305,13 @@ class ShieldAccessibilityService : AccessibilityService() {
         }
 
         if (foregroundPackage !in monitoredPackages) {
+            updateEventSubscription(includeContentEvents = false)
             if (contextChanged) {
                 Log.i(
                     TAG,
                     "Monitoring paused; foreground=$foregroundPackage window=$foregroundWindowId"
                 )
-                scanner.scheduleModelWarmup()
+                scanner.scheduleModelRelease()
             }
             cancelScheduledScan()
             scanner.clearConfirmation()
@@ -283,7 +320,42 @@ class ShieldAccessibilityService : AccessibilityService() {
         if (contextChanged) {
             Log.i(TAG, "Monitoring foreground=$foregroundPackage window=$foregroundWindowId")
         }
+        updateEventSubscription(includeContentEvents = true)
+        scanner.cancelScheduledModelRelease()
         scanner.onMonitoredEvent()
+    }
+
+    private fun updateEventSubscription(includeContentEvents: Boolean) {
+        if (contentEventsEnabled == includeContentEvents && serviceInfo.notificationTimeout ==
+            EVENT_NOTIFICATION_TIMEOUT_MS
+        ) {
+            return
+        }
+        contentEventsEnabled = includeContentEvents
+        serviceInfo = serviceInfo.apply {
+            eventTypes = if (includeContentEvents) ACTIVE_EVENT_TYPES else IDLE_EVENT_TYPES
+            notificationTimeout = EVENT_NOTIFICATION_TIMEOUT_MS
+            flags = flags or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+        }
+        Log.i(TAG, "Accessibility event mode=${if (includeContentEvents) "active" else "idle"}")
+    }
+
+    private fun maybeLogEventMetrics() {
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = now - eventMetricsStartedAt
+        if (elapsed < EVENT_METRICS_INTERVAL_MS) return
+        Log.i(
+            TAG,
+            "Accessibility event metrics: received=$receivedEventCount ignored=$ignoredEventCount " +
+                "maxHandlerMs=$maxEventTimeMs intervalMs=$elapsed mode=" +
+                if (contentEventsEnabled) "active" else "idle"
+        )
+        eventMetricsStartedAt = now
+        receivedEventCount = 0
+        ignoredEventCount = 0
+        maxEventTimeMs = 0L
     }
 
     private fun cancelScheduledScan() = scanner.cancelScheduledScan()
@@ -358,9 +430,80 @@ class ShieldAccessibilityService : AccessibilityService() {
             .take(resultLimit)
     }
 
+    /**
+     * Builds the per-scan node snapshot in one traversal. FrameScanner invokes this off-main because
+     * every node getter can cross into the foreground app through Binder.
+     */
+    private fun collectScanAccessibilityContext(app: ShieldedApp?): ScanAccessibilityContext {
+        val root = rootInActiveWindow ?: return ScanAccessibilityContext.EMPTY
+        val screenWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1)
+        val screenHeight = resources.displayMetrics.heightPixels.coerceAtLeast(1)
+        val screenArea = screenWidth.toLong() * screenHeight
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val candidates = mutableListOf<DetectionRegion>()
+        val labels = mutableListOf<String>()
+        val viewIds = mutableListOf<String>()
+        queue.add(root)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited++ < MAX_ACCESSIBILITY_NODES) {
+            val node = queue.removeFirst()
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::addLast)
+            if (!node.isVisibleToUser) continue
+
+            if (app != null) {
+                node.text?.toString()?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let(labels::add)
+                node.contentDescription?.toString()?.trim()?.lowercase()
+                    ?.takeIf(String::isNotBlank)?.let(labels::add)
+                node.viewIdResourceName?.lowercase()?.let(viewIds::add)
+            }
+
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (!bounds.intersect(0, 0, screenWidth, screenHeight)) continue
+            val area = bounds.width().toLong() * bounds.height()
+            if (area < screenArea * MIN_MEDIA_AREA_PERCENT / 100L ||
+                area > screenArea * MAX_MEDIA_AREA_PERCENT / 100L ||
+                bounds.width() < screenWidth * MIN_MEDIA_WIDTH_PERCENT / 100 ||
+                bounds.height() < screenHeight * MIN_MEDIA_HEIGHT_PERCENT / 100
+            ) {
+                continue
+            }
+            val className = node.className?.toString().orEmpty().lowercase()
+            val description = node.contentDescription?.toString().orEmpty().lowercase()
+            val viewId = node.viewIdResourceName.orEmpty().lowercase()
+            val likelyMedia = className.contains("imageview") ||
+                className.contains("textureview") ||
+                className.contains("surfaceview") ||
+                MEDIA_HINTS.any { it in description || it in viewId } ||
+                (node.childCount == 0 && description.isNotBlank())
+            if (!likelyMedia) continue
+
+            val region = DetectionRegion(
+                bounds.left.toFloat() / screenWidth,
+                bounds.top.toFloat() / screenHeight,
+                bounds.right.toFloat() / screenWidth,
+                bounds.bottom.toFloat() / screenHeight,
+                source = DetectionRegionSource.ACCESSIBILITY
+            )
+            if (candidates.none { normalizedIntersectionOverUnion(it, region) >= DUPLICATE_REGION_IOU }) {
+                candidates += region
+            }
+        }
+
+        val resultLimit = if (root.packageName?.toString() == ShieldedApp.INSTAGRAM.packageName) {
+            MAX_INSTAGRAM_MEDIA_REGIONS
+        } else {
+            MAX_MEDIA_REGIONS
+        }
+        return ScanAccessibilityContext(
+            mediaRegions = candidates.sortedByDescending(DetectionRegion::area).take(resultLimit),
+            screenSignals = if (app == null) ScreenSignals.EMPTY else ScreenSignals(labels, viewIds)
+        )
+    }
+
     /** Shows a browser-specific shield only when a blocked DNS request came from the foreground. */
     private fun showBlockedSiteOverlay(domain: String) {
-        syncForegroundFromRoot()
         val browserPackage = foregroundPackage?.takeIf { it in browserPackages } ?: run {
             Log.d(TAG, "Blocked DNS request had no foreground browser; overlay suppressed")
             return
@@ -440,18 +583,32 @@ class ShieldAccessibilityService : AccessibilityService() {
         Log.w(TAG, "Accessibility service interrupted")
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val actualPressure = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+        if (actualPressure && ::scanner.isInitialized) {
+            scanner.releaseModelsForMemoryPressure()
+        }
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
+        isConnected = false
+        broadcastConnectionState()
         cancelScheduledScan()
-        scanner.cancelModelWarmup()
+        scanner.cancelScheduledModelRelease()
         clearLocalizedOverlays()
         overlays.clearSiteBlockingOverlay()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        isConnected = false
+        broadcastConnectionState()
         handler.removeCallbacks(healthHeartbeat)
         cancelScheduledScan()
-        scanner.cancelModelWarmup()
+        scanner.cancelScheduledModelRelease()
         clearLocalizedOverlays()
         overlays.clearSiteBlockingOverlay()
         runCatching { unregisterReceiver(blockedDomainReceiver) }
@@ -460,12 +617,20 @@ class ShieldAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-        private const val TAG = "SinShield"
+        const val ACTION_STATE_CHANGED = "com.example.sinshield.action.ACCESSIBILITY_STATE_CHANGED"
+        const val EXTRA_CONNECTED = "connected"
+        @Volatile var isConnected: Boolean = false
+            private set
+        private const val TAG = "SinSheld"
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private const val ANDROID_PACKAGE = "android"
         private const val UNKNOWN_WINDOW_ID = -1
         private const val MAX_ACCESSIBILITY_NODES = 400
         private const val MAX_MEDIA_REGIONS = 4
         private const val MAX_INSTAGRAM_MEDIA_REGIONS = 18
         private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
+        private const val EVENT_NOTIFICATION_TIMEOUT_MS = 100L
+        private const val EVENT_METRICS_INTERVAL_MS = 30_000L
         private const val MIN_MEDIA_AREA_PERCENT = 4
         private const val MAX_MEDIA_AREA_PERCENT = 90
         private const val MIN_MEDIA_WIDTH_PERCENT = 25
@@ -491,6 +656,14 @@ class ShieldAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED
         )
 
+        private const val IDLE_EVENT_TYPES =
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        private const val ACTIVE_EVENT_TYPES =
+            IDLE_EVENT_TYPES or
+                AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+
         // Apps with a ShieldedApp profile get the full-screen block; the rest are covered
         // post-by-post, so both kinds have to be monitored.
         private val socialPackages = setOf(
@@ -510,6 +683,14 @@ class ShieldAccessibilityService : AccessibilityService() {
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
             "com.opera.mini.native"
+        )
+    }
+
+    private fun broadcastConnectionState() {
+        sendBroadcast(
+            Intent(ACTION_STATE_CHANGED)
+                .setPackage(packageName)
+                .putExtra(EXTRA_CONNECTED, isConnected)
         )
     }
 }

@@ -43,6 +43,7 @@ internal enum class DeviceBackgroundPolicy(
 
     companion object {
         private const val PREFERENCES = "device_background_setup"
+        private const val BATTERY_REVIEWED_SUFFIX = "_battery_no_restrictions"
 
         fun current(): DeviceBackgroundPolicy? = detect(Build.MANUFACTURER, Build.BRAND)
 
@@ -66,6 +67,17 @@ internal enum class DeviceBackgroundPolicy(
             context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(policy.name, true)
+                .apply()
+        }
+
+        fun hasConfirmedNoRestrictions(context: Context, policy: DeviceBackgroundPolicy): Boolean =
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(policy.name + BATTERY_REVIEWED_SUFFIX, false)
+
+        fun confirmNoRestrictions(context: Context, policy: DeviceBackgroundPolicy) {
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(policy.name + BATTERY_REVIEWED_SUFFIX, true)
                 .apply()
         }
 

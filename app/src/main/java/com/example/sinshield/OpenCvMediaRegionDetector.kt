@@ -513,7 +513,12 @@ internal class OpenCvMediaRegionDetector(
             available = runCatching { OpenCVLoader.initLocal() }
                 .onFailure { Log.e(TAG, "OpenCV initialization failed", it) }
                 .getOrDefault(false)
-            if (available) Log.i(TAG, "OpenCV initialized (media region detector active)")
+            if (available) {
+                // OpenCV otherwise uses a device-sized native pool. SinShield already performs ML
+                // around this pass, so one low-priority detection thread avoids system-wide jank.
+                Core.setNumThreads(1)
+                Log.i(TAG, "OpenCV initialized (media region detector active, threads=1)")
+            }
             else Log.e(TAG, "OpenCV initialization returned false")
         }
         return available
@@ -550,7 +555,7 @@ internal class OpenCvMediaRegionDetector(
     }
 
     private companion object {
-        private const val TAG = "SinShield"
+        private const val TAG = "SinSheld"
         private const val ANALYSIS_MAX_WIDTH = 720.0
         private const val BLUR_SIZE = 5.0
         private const val CANNY_LOW = 40.0
