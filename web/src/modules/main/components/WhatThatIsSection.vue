@@ -8,7 +8,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
     <BaseContainer
       class="grid items-center gap-12 lg:grid-cols-[minmax(280px,0.72fr)_minmax(0,1fr)] lg:gap-20 xl:gap-24"
     >
-      <div class="flex justify-center lg:justify-start">
+      <div class="order-2 flex justify-center lg:order-1 lg:justify-start">
         <div
           class="relative aspect-[864/1821] w-[240px] overflow-hidden rounded-[2.275rem] sm:w-[290px] sm:rounded-[3.25rem] lg:w-[320px] lg:rounded-[3.5rem] drop-shadow-2xl"
         >
@@ -27,7 +27,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
         </div>
       </div>
 
-      <div class="max-w-2xl">
+      <div class="order-1 max-w-2xl lg:order-2">
         <h2
           class="mb-5 font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:mb-6 sm:text-[44px] lg:text-[56px]"
         >

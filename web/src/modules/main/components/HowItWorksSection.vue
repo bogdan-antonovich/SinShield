@@ -72,13 +72,13 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
       <div class="grid gap-14 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-20 xl:gap-28">
         <div
           id="how-it-works-panel"
-          class="flex min-w-0 flex-col"
+          class="order-2 flex min-w-0 flex-col lg:order-1"
           role="tabpanel"
           :aria-labelledby="`how-it-works-tab-${activeIndex}`"
           tabindex="0"
         >
           <div
-            class="aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-navy shadow-2xl shadow-navy/20"
+            class="hidden aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-navy shadow-2xl shadow-navy/20 lg:block"
           >
             <img
               src="/images/how-it-works.png"
@@ -87,7 +87,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
             />
           </div>
 
-          <div class="mt-7 max-w-xl sm:mt-8 lg:min-h-64 xl:min-h-56">
+          <div class="max-w-xl lg:mt-8 lg:min-h-64 xl:min-h-56">
             <h3 class="font-display text-2xl font-bold tracking-[-0.02em] text-white">
               {{ steps[activeIndex]?.title }}
             </h3>
@@ -101,7 +101,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
           </BaseButton>
         </div>
 
-        <div class="lg:pt-1">
+        <div class="order-1 lg:order-2 lg:pt-1">
           <h2
             class="max-w-2xl font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-white sm:text-[44px] lg:text-[56px]"
           >

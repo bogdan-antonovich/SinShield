@@ -8,7 +8,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
     <BaseContainer
       class="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)] lg:gap-20 xl:gap-24"
     >
-      <div class="max-w-2xl">
+      <div class="order-1 max-w-2xl">
         <h2
           class="mb-5 font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:mb-6 sm:text-[44px] lg:text-[56px]"
         >
@@ -32,7 +32,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
         <BaseButton to="/products" class="mt-10"> Get Started </BaseButton>
       </div>
 
-      <div class="flex justify-center lg:justify-end">
+      <div class="order-2 flex justify-center lg:justify-end">
         <img
           src="/images/AdvancedSettings.png"
           alt="SinShield detection sensitivity controls on a Google Pixel 10 Pro"
