@@ -43,6 +43,47 @@ function jsonLdScript(data) {
   return `<script type="application/ld+json">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script>`
 }
 
+function breadcrumbSchema(trail) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: trail.map((crumb, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: crumb.label,
+      item: absoluteUrl(crumb.href),
+    })),
+  }
+}
+
+function faqSchema(items) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  }
+}
+
+function howToSchema({ name, description, url, steps }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name,
+    ...(description ? { description } : {}),
+    step: steps.map((step, index) => ({
+      '@type': 'HowToStep',
+      position: index + 1,
+      name: step.name,
+      ...(step.text ? { text: step.text } : {}),
+      ...(url ? { url: `${url}#step-${index + 1}` } : {}),
+    })),
+  }
+}
+
 function metadataMarkup({ title, description, pathName, image, type = 'website', article, structuredData = [] }) {
   const canonicalUrl = `${siteOrigin}${pathName}`
   const absoluteImage = image ? absoluteUrl(image) : undefined
@@ -217,9 +258,62 @@ function blogBody() {
 // The copy below mirrors the Vue section components so non-JS crawlers and AI
 // engines receive the same content the client renders after hydration.
 
-const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.example.sinshield'
+const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=app.sinshield'
 const SUPPORT_EMAIL = 'support@sinshield.app'
 const socialProfiles = [] // add real profile URLs here to populate Organization.sameAs
+
+// Mirrors src/modules/main/components/FaqSection.vue so crawlers and AI engines
+// receive the same FAQ content the homepage renders after hydration, and so the
+// FAQPage schema below reflects visible on-page text.
+const homeFaqItems = [
+  {
+    question: 'What does SinShield block?',
+    answer:
+      'SinShield covers explicit and suggestive content inside supported apps, including Instagram and X, and blocks known adult websites through a separate website-protection layer. You can also add domains to your personal block list.',
+  },
+  {
+    question: 'Are my screenshots or browsing activity uploaded?',
+    answer:
+      'No. Screen captures are analyzed by models running on your Android device and are not sent to SinShield. Website protection checks standard DNS requests locally; SinShield does not receive your browsing history or inspect the contents of the pages you visit.',
+  },
+  {
+    question: 'Why does SinShield need Accessibility and overlay permissions?',
+    answer:
+      'Android requires Accessibility permission so SinShield can notice changes in supported apps and capture the visible screen for on-device analysis. The overlay permission lets it place a cover over unsafe content. You grant and can revoke both permissions in Android settings.',
+  },
+  {
+    question: 'Is website protection a regular VPN?',
+    answer:
+      'No. SinShield uses Android’s local VPN feature only to filter standard DNS requests for known adult domains. It does not route, decrypt, or inspect your web traffic. Because Android allows one VPN at a time, website protection cannot run alongside another VPN.',
+  },
+  {
+    question: 'Can SinShield make a mistake?',
+    answer:
+      'Like any automated detection, it can occasionally cover safe content or miss something unsafe. You can report a false positive from the block screen, and SinShield remembers that correction locally so the same frame is not covered again.',
+  },
+  {
+    question: 'Can I choose how strict the protection is?',
+    answer:
+      'Yes. SinShield includes five protection levels, from Relaxed to Maximum, a separate option for suggestive content, and advanced detection controls. The recommended settings are a good place to start.',
+  },
+  {
+    question: 'What happens when content is blocked?',
+    answer:
+      'SinShield creates a short pause and covers the unsafe content. You can then move past it, return to your feed, or close the app. The shield is there to interrupt the impulse, while the final choice stays with you.',
+  },
+  {
+    question: 'Do I need an account or subscription?',
+    answer:
+      'No. SinShield is free to use and does not require an account or cloud profile. It is currently available for Android 11 and newer.',
+  },
+]
+
+// Mirrors the numbered steps in src/modules/products/components/StepsSection.vue.
+const androidInstallSteps = [
+  { name: 'Open Google Play', text: 'Tap the Get it on Google Play button to open the SinShield listing.' },
+  { name: 'Install the Android app', text: 'Install SinShield from Google Play on your Android device.' },
+  { name: 'Stay protected', text: 'Grant the requested permissions once and SinShield keeps working in the background.' },
+]
 
 function paragraphs(items) {
   return items.map((text) => `<p>${escapeHtml(text)}</p>`).join('\n')
@@ -279,6 +373,18 @@ function homeBody() {
           'Lower settings help SinShield catch more questionable content, while higher settings reduce the chance of ordinary posts being covered, which means you can choose stronger protection or a lighter touch and change that balance whenever your needs change.',
         ])}
         <p><a href="/products">Get Started</a></p>
+      </section>
+      <section id="faq">
+        <h2>FAQ</h2>
+        ${homeFaqItems
+          .map(
+            (item) => `
+        <details>
+          <summary>${escapeHtml(item.question)}</summary>
+          <p>${escapeHtml(item.answer)}</p>
+        </details>`,
+          )
+          .join('\n')}
       </section>
     </main>`
 }
@@ -382,7 +488,7 @@ const marketingPages = [
       'SinShield blocks adult content on your phone and makes it harder to give in when temptation hits. Everything stays on your device, with no accounts or activity tracking.',
     pathName: '/',
     image: '/sinshield-thumbnail.jpg',
-    structuredData: [organizationSchema, websiteSchema],
+    structuredData: [organizationSchema, websiteSchema, faqSchema(homeFaqItems)],
     body: homeBody(),
   },
   {
@@ -391,7 +497,19 @@ const marketingPages = [
       'Choose your platform and get SinShield, the private on-device adult content blocker. Available for Android with no account, no tracking, and no uploaded screenshots.',
     pathName: '/products',
     image: '/sinshield-thumbnail.jpg',
-    structuredData: [organizationSchema],
+    structuredData: [
+      organizationSchema,
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Products', href: '/products' },
+      ]),
+      howToSchema({
+        name: 'How to install SinShield on Android',
+        description: 'Get SinShield running on your Android device in three steps.',
+        url: `${siteOrigin}/products`,
+        steps: androidInstallSteps,
+      }),
+    ],
     body: productsBody(),
   },
   {
@@ -400,7 +518,14 @@ const marketingPages = [
       'SinShield blocks adult websites and covers explicit content inside Instagram and X, with every check kept on your phone. No accounts, no tracking, no judgment.',
     pathName: '/products/android',
     image: '/sinshield-thumbnail.jpg',
-    structuredData: [softwareApplicationSchema],
+    structuredData: [
+      softwareApplicationSchema,
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Products', href: '/products' },
+        { label: 'Android', href: '/products/android' },
+      ]),
+    ],
     body: androidBody(),
   },
 ]
@@ -434,6 +559,13 @@ for (const article of articles) {
     image: article.thumbnail,
     type: 'article',
     article,
+    structuredData: [
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Blog', href: '/blog' },
+        { label: article.title, href: articlePath(article) },
+      ]),
+    ],
     body: articleBody(article),
   })
 

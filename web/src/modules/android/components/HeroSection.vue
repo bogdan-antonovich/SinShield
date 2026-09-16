@@ -6,7 +6,7 @@ import BaseButton from '@/common/components/BaseButton.vue'
 import BaseContainer from '@/common/components/BaseContainer.vue'
 import TheBreadCrumbs from '@/layouts/components/TheBreadCrumbs.vue'
 
-const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.example.sinshield'
+const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=app.sinshield'
 const qrCodeDataUrl = ref('')
 const breadcrumbs = [
   { label: 'Home', to: '/' },

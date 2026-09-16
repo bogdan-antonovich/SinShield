@@ -2,7 +2,7 @@
 import BaseButton from '@/common/components/BaseButton.vue'
 import BaseContainer from '@/common/components/BaseContainer.vue'
 
-const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.example.sinshield'
+const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=app.sinshield'
 
 const androidSteps = [
   { label: 'Click the above download button' },

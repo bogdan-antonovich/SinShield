@@ -10,7 +10,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.sinshield"
+        applicationId = "app.sinshield"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
