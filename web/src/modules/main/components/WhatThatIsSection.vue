@@ -47,7 +47,9 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
           </p>
         </div>
 
-        <BaseButton to="/products" class="mt-10"> Get Started </BaseButton>
+        <BaseButton to="/products" variant="inverse" class="mt-10 ring-1 ring-navy/10">
+          Get Started
+        </BaseButton>
       </div>
     </BaseContainer>
   </section>
