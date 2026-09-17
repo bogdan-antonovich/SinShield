@@ -40,15 +40,20 @@ fi
 
 nginx_available="/etc/nginx/sites-available/mail.sinshield.app"
 nginx_enabled="/etc/nginx/sites-enabled/mail.sinshield.app"
+certificate_lineage="/etc/letsencrypt/live/mail.sinshield.app"
+if [[ ! -f "$certificate_lineage/fullchain.pem" ]]; then
+  install -d -o root -g root -m 0755 /var/www/certbot
+  install -o root -g root -m 0644 "$mail_dir/nginx/mail.sinshield.app.bootstrap.conf" "$nginx_available"
+  ln -sfn "$nginx_available" "$nginx_enabled"
+  nginx -t
+  systemctl reload nginx
+  certbot certonly --webroot --webroot-path /var/www/certbot -d mail.sinshield.app
+fi
+
 install -o root -g root -m 0644 "$mail_dir/nginx/mail.sinshield.app.conf" "$nginx_available"
 ln -sfn "$nginx_available" "$nginx_enabled"
 nginx -t
 systemctl reload nginx
-
-certificate_lineage="/etc/letsencrypt/live/mail.sinshield.app"
-if [[ ! -f "$certificate_lineage/fullchain.pem" ]]; then
-  certbot --nginx --redirect -d mail.sinshield.app
-fi
 
 hook_target="/etc/letsencrypt/renewal-hooks/deploy/sinshield-mail"
 install -o root -g root -m 0755 "$mail_dir/scripts/certbot-deploy-hook.sh" "$hook_target"
