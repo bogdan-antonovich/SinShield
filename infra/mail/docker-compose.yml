@@ -1,0 +1,47 @@
+name: sinshield-mail
+
+services:
+  stalwart:
+    image: ${STALWART_IMAGE:-stalwartlabs/stalwart:v0.16}
+    container_name: stalwart
+    hostname: mail.sinshield.app
+    restart: unless-stopped
+    environment:
+      STALWART_PUBLIC_URL: https://mail.sinshield.app
+    ports:
+      - "${MAIL_IPV4:-72.60.118.148}:25:25"
+      - "${MAIL_IPV4:-72.60.118.148}:465:465"
+      - "${MAIL_IPV4:-72.60.118.148}:587:587"
+      - "${MAIL_IPV4:-72.60.118.148}:993:993"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /srv/stalwart/etc:/etc/stalwart
+      - /srv/stalwart/data:/var/lib/stalwart
+      - /srv/stalwart/certs:/certs:ro
+    networks:
+      default:
+        aliases:
+          - mail.sinshield.app
+
+  roundcube:
+    image: ${ROUNDCUBE_IMAGE:-roundcube/roundcubemail:1.7.x-apache}
+    container_name: sinshield-roundcube
+    restart: unless-stopped
+    depends_on:
+      - stalwart
+    environment:
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      ROUNDCUBEMAIL_DEFAULT_HOST: ssl://mail.sinshield.app
+      ROUNDCUBEMAIL_DEFAULT_PORT: "993"
+      ROUNDCUBEMAIL_SMTP_SERVER: tls://mail.sinshield.app
+      ROUNDCUBEMAIL_SMTP_PORT: "587"
+      ROUNDCUBEMAIL_USERNAME_DOMAIN: sinshield.app
+      ROUNDCUBEMAIL_REQUEST_PATH: /webmail/
+      ROUNDCUBEMAIL_SKIN: elastic
+      ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE: 25M
+      ROUNDCUBEMAIL_DES_KEY: ${ROUNDCUBE_DES_KEY:?ROUNDCUBE_DES_KEY must be set}
+    ports:
+      - "127.0.0.1:9002:80"
+    volumes:
+      - /srv/stalwart/roundcube:/var/roundcube/db
+

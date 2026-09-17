@@ -1,0 +1,106 @@
+name: Mail Infrastructure
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "infra/mail/**"
+      - ".github/workflows/mail-infrastructure.yml"
+  push:
+    branches: [master]
+    paths:
+      - "infra/mail/**"
+      - ".github/workflows/mail-infrastructure.yml"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Upload files only for bootstrap, or deploy the containers
+        required: true
+        default: upload-only
+        type: choice
+        options:
+          - upload-only
+          - deploy
+      stalwart_image:
+        description: Pinned Stalwart image tag or digest
+        required: true
+        default: stalwartlabs/stalwart:v0.16
+        type: string
+      roundcube_image:
+        description: Pinned Roundcube image tag or digest
+        required: true
+        default: roundcube/roundcubemail:1.7.x-apache
+        type: string
+
+concurrency:
+  group: sinshield-mail-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate mail infrastructure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Validate shell scripts
+        run: bash -n infra/mail/scripts/*.sh
+
+      - name: Validate Compose model
+        env:
+          MAIL_IPV4: 72.60.118.148
+          ROUNDCUBE_DES_KEY: ci-only-placeholder-key
+          STALWART_IMAGE: stalwartlabs/stalwart:v0.16
+          ROUNDCUBE_IMAGE: roundcube/roundcubemail:1.7.x-apache
+        run: docker compose -f infra/mail/docker-compose.yml config --quiet
+
+  deploy:
+    name: Upload or deploy production mail
+    needs: validate
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production-mail
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Copy mail infrastructure
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: infra/mail/*
+          target: ~/sinshield-mail/
+          strip_components: 2
+
+      - name: Deploy mail containers
+        if: ${{ inputs.operation == 'deploy' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          MAIL_IPV4: ${{ vars.MAIL_IPV4 || '72.60.118.148' }}
+          STALWART_IMAGE: ${{ inputs.stalwart_image }}
+          ROUNDCUBE_IMAGE: ${{ inputs.roundcube_image }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: MAIL_IPV4,STALWART_IMAGE,ROUNDCUBE_IMAGE
+          script: |
+            set -eu
+            cd ~/sinshield-mail
+            chmod 0755 scripts/*.sh
+            export MAIL_IPV4 STALWART_IMAGE ROUNDCUBE_IMAGE
+            ./scripts/deploy.sh
+
+      - name: Show bootstrap command
+        if: ${{ inputs.operation == 'upload-only' }}
+        run: echo "Files uploaded. SSH to the VPS and run sudo ~/sinshield-mail/scripts/bootstrap-host.sh"
