@@ -83,6 +83,25 @@ Create a GitHub environment named `production-mail` and add required reviewers. 
    docker restart stalwart
    ```
 
+### Reset an unfinished bootstrap from GitHub Actions
+
+Use this only before creating mailboxes or completing the setup wizard. In the
+`production-mail` GitHub environment, create the secret
+`STALWART_RECOVERY_ADMIN` with a temporary value in `admin:strong-password`
+form. Run the workflow with:
+
+```text
+operation:          reset-bootstrap
+reset_confirmation: RESET-STALWART
+```
+
+The reset operation first archives the current Stalwart state under
+`/srv/stalwart/backups`, clears only the Stalwart configuration and message data,
+and starts bootstrap mode with the fixed recovery credential. Sign in as
+`admin` using the password after the colon. After completing the wizard, save
+the permanent administrator credential and run `operation=deploy`; the normal
+deployment recreates Stalwart without the temporary recovery credential.
+
 ## Configure Stalwart TLS
 
 In the Stalwart admin UI, create a manual certificate using file references:

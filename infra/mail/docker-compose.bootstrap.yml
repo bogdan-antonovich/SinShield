@@ -1,0 +1,4 @@
+services:
+  stalwart:
+    environment:
+      STALWART_RECOVERY_ADMIN: ${STALWART_RECOVERY_ADMIN:?STALWART_RECOVERY_ADMIN must be set}

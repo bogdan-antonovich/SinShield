@@ -14,13 +14,19 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Upload files only for bootstrap, or deploy the containers
+        description: Upload files, deploy containers, or reset an unfinished Stalwart bootstrap
         required: true
         default: upload-only
         type: choice
         options:
           - upload-only
           - deploy
+          - reset-bootstrap
+      reset_confirmation:
+        description: Type RESET-STALWART when using reset-bootstrap
+        required: false
+        default: ""
+        type: string
       stalwart_image:
         description: Pinned Stalwart image tag or digest
         required: true
@@ -100,6 +106,27 @@ jobs:
             chmod 0755 scripts/*.sh
             export MAIL_IPV4 STALWART_IMAGE ROUNDCUBE_IMAGE
             ./scripts/deploy.sh
+
+      - name: Reset unfinished Stalwart bootstrap
+        if: ${{ inputs.operation == 'reset-bootstrap' }}
+        uses: appleboy/ssh-action@v1
+        env:
+          MAIL_IPV4: ${{ vars.MAIL_IPV4 || '72.60.118.148' }}
+          STALWART_IMAGE: ${{ inputs.stalwart_image }}
+          ROUNDCUBE_IMAGE: ${{ inputs.roundcube_image }}
+          STALWART_RECOVERY_ADMIN: ${{ secrets.STALWART_RECOVERY_ADMIN }}
+          RESET_CONFIRMATION: ${{ inputs.reset_confirmation }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: MAIL_IPV4,STALWART_IMAGE,ROUNDCUBE_IMAGE,STALWART_RECOVERY_ADMIN,RESET_CONFIRMATION
+          script: |
+            set -eu
+            cd ~/sinshield-mail
+            chmod 0755 scripts/*.sh
+            export MAIL_IPV4 STALWART_IMAGE ROUNDCUBE_IMAGE STALWART_RECOVERY_ADMIN RESET_CONFIRMATION
+            ./scripts/reset-bootstrap.sh
 
       - name: Show bootstrap command
         if: ${{ inputs.operation == 'upload-only' }}
