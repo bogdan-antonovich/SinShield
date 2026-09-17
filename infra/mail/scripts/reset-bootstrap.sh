@@ -30,8 +30,15 @@ set +a
 backup_archive="$($script_dir/backup.sh)"
 docker compose -f "$compose_file" down
 
-find /srv/stalwart/etc -mindepth 1 -delete
-find /srv/stalwart/data -mindepth 1 -delete
+# Stalwart-created files may not be removable by the host deployment user even
+# when the bind-mount roots are group writable. Restrict a root container to the
+# two directories this explicitly destructive operation is allowed to clear.
+docker run --rm \
+  --entrypoint /bin/sh \
+  --volume /srv/stalwart/etc:/target/etc \
+  --volume /srv/stalwart/data:/target/data \
+  "${ROUNDCUBE_IMAGE:-roundcube/roundcubemail:1.7.x-apache}" \
+  -c 'find /target/etc -mindepth 1 -delete && find /target/data -mindepth 1 -delete'
 
 docker compose -f "$compose_file" -f "$bootstrap_file" config --quiet
 docker compose -f "$compose_file" -f "$bootstrap_file" up -d --remove-orphans
