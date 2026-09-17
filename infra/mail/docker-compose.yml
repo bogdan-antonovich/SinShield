@@ -33,8 +33,8 @@ services:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
       ROUNDCUBEMAIL_DEFAULT_HOST: ssl://mail.sinshield.app
       ROUNDCUBEMAIL_DEFAULT_PORT: "993"
-      ROUNDCUBEMAIL_SMTP_SERVER: tls://mail.sinshield.app
-      ROUNDCUBEMAIL_SMTP_PORT: "587"
+      ROUNDCUBEMAIL_SMTP_SERVER: ssl://mail.sinshield.app
+      ROUNDCUBEMAIL_SMTP_PORT: "465"
       ROUNDCUBEMAIL_USERNAME_DOMAIN: sinshield.app
       ROUNDCUBEMAIL_REQUEST_PATH: /webmail/
       ROUNDCUBEMAIL_SKIN: elastic
@@ -44,4 +44,3 @@ services:
       - "127.0.0.1:9002:80"
     volumes:
       - /srv/stalwart/roundcube:/var/roundcube/db
-
