@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-
 import BaseContainer from '@/common/components/BaseContainer.vue'
+import { usePageMetadata } from '@/common/composables/usePageMetadata'
 
 defineOptions({ name: 'TermsAndConditionsView' })
 
-onMounted(() => {
-  document.title = 'Terms & Conditions | SinShield'
+usePageMetadata({
+  title: 'Terms & Conditions | SinShield',
+  description: 'Read the terms and conditions governing use of the SinShield app and website.',
+  path: '/terms-and-conditions',
 })
 </script>
 

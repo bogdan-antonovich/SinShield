@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-
 import BaseContainer from '@/common/components/BaseContainer.vue'
+import { usePageMetadata } from '@/common/composables/usePageMetadata'
 
 defineOptions({ name: 'PrivacyPolicyView' })
 
-onMounted(() => {
-  document.title = 'Privacy Policy | SinShield'
+usePageMetadata({
+  title: 'Privacy Policy | SinShield',
+  description:
+    'Learn how the SinShield Android app and website handle information and protect your privacy.',
+  path: '/privacy-policy',
 })
 </script>
 
