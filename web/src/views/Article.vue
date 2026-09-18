@@ -12,7 +12,9 @@ import TableOfContents, {
 } from '@/modules/blog/components/TableOfContents.vue'
 import {
   formatArticleDate,
+  getArticles,
   getArticleBySlug,
+  getArticleMetaTitle,
   getArticlePath,
 } from '@/modules/blog/services/articles'
 import type {
@@ -26,6 +28,20 @@ defineOptions({ name: 'ArticleView' })
 
 const route = useRoute()
 const article = computed(() => getArticleBySlug(String(route.params.slug)))
+const relatedArticles = computed(() => {
+  const current = article.value
+  if (!current) return []
+
+  return getArticles()
+    .filter((candidate) => candidate.slug !== current.slug)
+    .map((candidate) => ({
+      article: candidate,
+      sharedTags: candidate.tags.filter((tag) => current.tags.includes(tag)).length,
+    }))
+    .sort((left, right) => right.sharedTags - left.sharedTags || Date.parse(right.article.publishedAt) - Date.parse(left.article.publishedAt))
+    .slice(0, 3)
+    .map(({ article: candidate }) => candidate)
+})
 
 function resolveBlocks(section: ArticleSection): ArticleBlock[] {
   if (section.blocks) return section.blocks
@@ -111,12 +127,13 @@ usePageMetadata(() => {
   }
 
   return {
-    title: `${value.title} — SinShield`,
+    title: `${getArticleMetaTitle(value)} | SinShield`,
     description: value.description,
     path: getArticlePath(value),
     image: value.thumbnail,
     type: 'article',
     publishedAt: value.publishedAt,
+    modifiedAt: value.updatedAt,
     author: value.author,
   }
 })
@@ -137,8 +154,12 @@ usePageMetadata(() => {
         </p>
 
         <p class="mt-8 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-sm font-semibold text-navy/55 sm:text-base">
-          <span>{{ article.author }},</span>
+          <RouterLink
+            to="/authors/sinshield-editorial"
+            class="rounded-sm underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+          >{{ article.author }}</RouterLink><span>,</span>
           <time :datetime="article.publishedAt">{{ formatArticleDate(article.publishedAt) }},</time>
+          <span v-if="article.updatedAt">updated <time :datetime="article.updatedAt">{{ formatArticleDate(article.updatedAt) }}</time>,</span>
           <span>{{ article.readingTime }}</span>
         </p>
 
@@ -227,6 +248,11 @@ usePageMetadata(() => {
       </div>
 
       <div class="mx-auto mt-16 max-w-3xl border-t border-navy/10 pt-8">
+        <div class="mb-12 rounded-3xl bg-white p-7 ring-1 ring-navy/8 sm:p-8">
+          <p class="font-display text-sm font-bold uppercase tracking-[0.16em] text-primary">About this article</p>
+          <p class="mt-3 leading-7 text-navy/70">Published by <RouterLink to="/authors/sinshield-editorial" class="font-semibold text-primary underline underline-offset-4">SinShield Editorial</RouterLink> under our <RouterLink to="/editorial-standards" class="font-semibold text-primary underline underline-offset-4">editorial standards</RouterLink>. Product ownership, limitations, source quality, and corrections are reviewed before publication.</p>
+        </div>
+
         <RouterLink
           to="/blog"
           class="inline-flex items-center gap-2 rounded-md font-display font-bold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/35"
@@ -235,6 +261,20 @@ usePageMetadata(() => {
           Back to the library
         </RouterLink>
       </div>
+
+      <section v-if="relatedArticles.length" class="mx-auto mt-16 max-w-5xl border-t border-navy/10 pt-12" aria-labelledby="related-reading-heading">
+        <h2 id="related-reading-heading" class="font-display text-3xl font-extrabold tracking-[-0.03em] text-navy">Related reading</h2>
+        <div class="mt-7 grid gap-5 sm:grid-cols-3">
+          <RouterLink
+            v-for="related in relatedArticles"
+            :key="related.slug"
+            :to="getArticlePath(related)"
+            class="rounded-2xl bg-white p-6 font-display text-lg font-bold leading-snug text-navy ring-1 ring-navy/8 transition hover:-translate-y-1 hover:text-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/35 motion-reduce:transition-none"
+          >
+            {{ related.title }}
+          </RouterLink>
+        </div>
+      </section>
     </BaseContainer>
   </main>
 

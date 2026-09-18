@@ -1,7 +1,7 @@
 ---
 slug: countries-where-porn-is-illegal
 title: "Countries Where Porn Is Illegal: What the Law Actually Bans"
-description: "Pornography laws vary between private viewing, possession, import, production, distribution, website blocking, and age checks. Here is how to understand the differences before you travel."
+description: "Porn laws differ across viewing, possession, import, production, distribution, blocking, and age checks. Learn what to verify before travel."
 author: "SinShield Editorial"
 publishedAt: 2026-09-15
 readingTime: "10 min read"

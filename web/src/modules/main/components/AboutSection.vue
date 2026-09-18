@@ -29,7 +29,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
           </p>
         </div>
 
-        <BaseButton to="/products" variant="inverse" class="mt-10 w-full sm:w-fit">
+        <BaseButton to="/products" class="mt-10 w-full sm:w-fit">
           Get Started
         </BaseButton>
       </div>

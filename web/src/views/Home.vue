@@ -11,9 +11,9 @@ import AdvancedTuning from '@/modules/main/components/AdvancedTuning.vue'
 defineOptions({ name: 'HomeView' })
 
 usePageMetadata({
-  title: 'SinShield — Private On-Device Adult Content Blocker',
+  title: 'Private Adult Content Blocker | SinShield',
   description:
-    'SinShield blocks adult content on your phone and makes it harder to give in when temptation hits. Everything stays on your device, with no accounts or activity tracking.',
+    'SinShield privately covers explicit imagery and blocks known adult sites on Android. On-device protection, no account, and no uploaded screenshots.',
   path: '/',
   image: '/sinshield-thumbnail.jpg',
 })

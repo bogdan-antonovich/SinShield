@@ -6,6 +6,8 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 interface Step {
   title: string
   description: string
+  illustration: string
+  illustrationAlt: string
 }
 
 const steps: Step[] = [
@@ -13,21 +15,29 @@ const steps: Step[] = [
     title: 'A screen change starts a scan',
     description:
       'When a protected app reports a window or content change, SinShield schedules a fresh capture. Rapid changes are combined so the scanner analyzes the newest visible frame instead of queuing stale frames.',
+    illustration: '/images/how-it-works/scan-starts.svg',
+    illustrationAlt: 'A scanning frame with a horizontal scan line',
   },
   {
     title: 'The visible frame is analyzed',
     description:
       'The captured frame is classified on the device. SinShield scores both the full screen and detected media regions for explicit and suggestive content; unchanged known-safe frames are skipped.',
+    illustration: '/images/how-it-works/frame-analyzed.svg',
+    illustrationAlt: 'A magnifying glass inspecting a framed area',
   },
   {
     title: 'Uncertain detections are checked again',
     description:
       'A clear unsafe score produces a final verdict. Borderline detections receive a provisional cover and a quick follow-up scan; an independent verifier is used when the policy requires another signal.',
+    illustration: '/images/how-it-works/checked-again.svg',
+    illustrationAlt: 'Circular arrows rechecking an uncertain result',
   },
   {
     title: 'Unsafe content is covered',
     description:
       'A final unsafe verdict places a full-screen shield in supported apps or a cover over the detected media region. Separately, the local DNS filter rejects requests for known adult domains before those sites can load.',
+    illustration: '/images/how-it-works/content-covered.svg',
+    illustrationAlt: 'A protective shield covering unsafe content',
   },
 ]
 
@@ -77,13 +87,14 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
           :aria-labelledby="`how-it-works-tab-${activeIndex}`"
           tabindex="0"
         >
-          <div
-            class="hidden aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-navy shadow-2xl shadow-navy/20 lg:block"
-          >
+          <div class="aspect-[4/3] w-full overflow-hidden rounded-[1.75rem] shadow-2xl shadow-black/20">
             <img
-              src="/images/how-it-works.png"
-              alt="Android phone on a calm desk, representing private on-device protection"
-              class="h-full w-full object-cover"
+              :src="steps[activeIndex]?.illustration"
+              :alt="steps[activeIndex]?.illustrationAlt"
+              width="800"
+              height="600"
+              draggable="false"
+              class="h-full w-full select-none object-cover"
             />
           </div>
 

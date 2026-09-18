@@ -24,6 +24,19 @@ export function getArticlePath(article: Article): string {
   return `/blog/${article.slug}`
 }
 
+const articleMetaTitles: Record<string, string> = {
+  'benefits-of-quitting-porn': 'Benefits of Quitting Porn: 8 Realistic Changes',
+  'best-accountability-apps-to-quit-porn': 'Best Accountability Apps to Quit Porn (2026)',
+  'countries-where-porn-is-illegal': 'Where Is Porn Illegal? Country Laws Explained',
+  'does-porn-lower-your-iq': 'Does Porn Lower Your IQ? Research Explained',
+  'how-to-break-the-scroll-trigger-loop': 'How to Break the Scroll–Trigger Loop',
+  'porn-on-x': 'Porn on X: Rules, Filters, and How to Block It',
+}
+
+export function getArticleMetaTitle(article: Article): string {
+  return articleMetaTitles[article.slug] ?? article.title
+}
+
 export function getBlogPageCount(articleCount: number): number {
   return Math.max(1, Math.ceil(articleCount / BLOG_PAGE_SIZE))
 }

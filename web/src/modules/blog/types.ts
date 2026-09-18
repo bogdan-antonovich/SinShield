@@ -59,6 +59,7 @@ export interface Article {
   description: string
   author: string
   publishedAt: string
+  updatedAt?: string
   readingTime: string
   thumbnail: string
   thumbnailAlt: string

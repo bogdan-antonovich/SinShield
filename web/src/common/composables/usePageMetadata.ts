@@ -8,6 +8,7 @@ interface PageMetadata {
   image?: string
   type?: 'website' | 'article'
   publishedAt?: string
+  modifiedAt?: string
   author?: string
 }
 
@@ -61,6 +62,12 @@ export function usePageMetadata(metadata: MaybeRefOrGetter<PageMetadata>) {
       upsertMeta('property', 'article:published_time', value.publishedAt)
     } else {
       removeMeta('property', 'article:published_time')
+    }
+
+    if (value.modifiedAt) {
+      upsertMeta('property', 'article:modified_time', value.modifiedAt)
+    } else {
+      removeMeta('property', 'article:modified_time')
     }
 
     if (value.author) {

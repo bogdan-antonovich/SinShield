@@ -95,10 +95,13 @@ function metadataMarkup({ title, description, pathName, image, type = 'website',
         description: article.description,
         image: absoluteImage,
         datePublished: article.publishedAt,
-        dateModified: article.publishedAt,
+        dateModified: article.updatedAt ?? article.publishedAt,
         author: {
           '@type': article.author === 'SinShield Editorial' ? 'Organization' : 'Person',
           name: article.author,
+          ...(article.author === 'SinShield Editorial'
+            ? { url: `${siteOrigin}/authors/sinshield-editorial` }
+            : {}),
         },
         publisher: {
           '@type': 'Organization',
@@ -123,6 +126,7 @@ function metadataMarkup({ title, description, pathName, image, type = 'website',
     `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">`,
     absoluteImage ? `<meta property="og:image" content="${escapeHtml(absoluteImage)}">` : '',
     article ? `<meta property="article:published_time" content="${article.publishedAt}">` : '',
+    article?.updatedAt ? `<meta property="article:modified_time" content="${article.updatedAt}">` : '',
     article ? `<meta property="article:author" content="${escapeHtml(article.author)}">` : '',
     `<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}">`,
     `<meta name="twitter:title" content="${escapeHtml(title)}">`,
@@ -146,6 +150,31 @@ function createDocument({ title, description, pathName, image, type, article, st
 
 function articlePath(article) {
   return `/blog/${article.slug}`
+}
+
+const articleMetaTitles = {
+  'benefits-of-quitting-porn': 'Benefits of Quitting Porn: 8 Realistic Changes',
+  'best-accountability-apps-to-quit-porn': 'Best Accountability Apps to Quit Porn (2026)',
+  'countries-where-porn-is-illegal': 'Where Is Porn Illegal? Country Laws Explained',
+  'does-porn-lower-your-iq': 'Does Porn Lower Your IQ? Research Explained',
+  'how-to-break-the-scroll-trigger-loop': 'How to Break the Scroll–Trigger Loop',
+  'porn-on-x': 'Porn on X: Rules, Filters, and How to Block It',
+}
+
+function articleMetaTitle(article) {
+  return articleMetaTitles[article.slug] ?? article.title
+}
+
+function relatedArticles(article) {
+  return articles
+    .filter((candidate) => candidate.slug !== article.slug)
+    .map((candidate) => ({
+      article: candidate,
+      sharedTags: candidate.tags.filter((tag) => article.tags.includes(tag)).length,
+    }))
+    .sort((left, right) => right.sharedTags - left.sharedTags || Date.parse(right.article.publishedAt) - Date.parse(left.article.publishedAt))
+    .slice(0, 3)
+    .map(({ article: candidate }) => candidate)
 }
 
 function renderRichText(value) {
@@ -215,12 +244,20 @@ function articleBody(article) {
       <article>
         <nav aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/blog">Blog</a></nav>
         <header>
-          <p>${escapeHtml(article.author)} · <time datetime="${article.publishedAt}">${escapeHtml(article.publishedAt)}</time> · ${escapeHtml(article.readingTime)}</p>
+          <p><a href="/authors/sinshield-editorial">${escapeHtml(article.author)}</a> · <time datetime="${article.publishedAt}">${escapeHtml(article.publishedAt)}</time>${article.updatedAt ? ` · updated <time datetime="${article.updatedAt}">${escapeHtml(article.updatedAt)}</time>` : ''} · ${escapeHtml(article.readingTime)}</p>
           <h1>${escapeHtml(article.title)}</h1>
           <p>${escapeHtml(article.description)}</p>
           <img src="${escapeHtml(article.thumbnail)}" alt="${escapeHtml(article.thumbnailAlt)}">
         </header>
         ${sections}
+        <aside>
+          <h2>About this article</h2>
+          <p>Published by <a href="/authors/sinshield-editorial">SinShield Editorial</a> under our <a href="/editorial-standards">editorial standards</a>. Product ownership, limitations, source quality, and corrections are reviewed before publication.</p>
+        </aside>
+        <section>
+          <h2>Related reading</h2>
+          <ul>${relatedArticles(article).map((related) => `<li><a href="${articlePath(related)}">${escapeHtml(related.title)}</a></li>`).join('')}</ul>
+        </section>
         <p><a href="/blog">Back to the library</a></p>
       </article>
     </main>`
@@ -231,10 +268,14 @@ function blogBody() {
 
   return `
     <main>
+      <header>
+        <h1>Practical guidance for healthier digital habits</h1>
+        <p>Evidence-aware, judgment-free articles about adult-content blocking, focus, and making a clear decision easier to keep when a difficult moment arrives.</p>
+      </header>
       <section>
-        <p>Latest article</p>
-        <h1><a href="${articlePath(featured)}">${escapeHtml(featured.title)}</a></h1>
-        <p>${escapeHtml(featured.author)} · <time datetime="${featured.publishedAt}">${escapeHtml(featured.publishedAt)}</time></p>
+        <p>Featured article</p>
+        <h2><a href="${articlePath(featured)}">${escapeHtml(featured.title)}</a></h2>
+        <p><a href="/authors/sinshield-editorial">${escapeHtml(featured.author)}</a> · <time datetime="${featured.publishedAt}">${escapeHtml(featured.publishedAt)}</time></p>
         <a href="${articlePath(featured)}">Read more</a>
         <a href="${articlePath(featured)}"><img src="${escapeHtml(featured.thumbnail)}" alt="${escapeHtml(featured.thumbnailAlt)}"></a>
       </section>
@@ -407,6 +448,25 @@ function productsBody() {
             <li>Stay protected</li>
           </ol>
         </section>
+        <section>
+          <h2>Is SinShield the right protection for you?</h2>
+          <p>SinShield is built for Android users who want private, automatic friction between an unexpected trigger and the next action. It analyzes visible content in supported apps on the device and separately blocks requests to known adult websites, so the two protection layers cover different routes without creating a cloud activity profile.</p>
+          <h3>A good fit when</h3>
+          <ul>
+            <li>You use Android 11 or newer.</li>
+            <li>You want image analysis to stay on your phone.</li>
+            <li>You need protection in Instagram, X, and the browser.</li>
+            <li>You prefer no account and no partner reports.</li>
+          </ul>
+          <h3>Know the limits</h3>
+          <ul>
+            <li>SinShield is not currently available for iPhone.</li>
+            <li>Automatic detection can miss content or cover a safe image.</li>
+            <li>It does not send accountability reports to another person.</li>
+            <li>Android permits only one local VPN at a time.</li>
+          </ul>
+          <p>Read how <a href="/products/android">SinShield for Android works</a>, or review our <a href="/privacy-policy">privacy policy</a> before installing.</p>
+        </section>
       </article>
     </main>`
 }
@@ -437,6 +497,119 @@ function androidBody() {
           <ul>
             ${androidFeatures.map(([label, value, detail]) => `<li><strong>${escapeHtml(label)}: ${escapeHtml(value)}.</strong> ${escapeHtml(detail)}</li>`).join('\n            ')}
           </ul>
+        </section>
+        <section>
+          <h2>What should you know before using SinShield?</h2>
+          <h3>Does SinShield upload screenshots?</h3>
+          <p>No. Visible frames are analyzed by models running on your Android device and discarded there; SinShield does not receive those frames or use them to build an activity history.</p>
+          <h3>Which apps does it protect?</h3>
+          <p>Screen-level covering currently focuses on Instagram and X. A separate local DNS filter can block known adult domains opened from a browser or another app, and you can add domains to a personal block list.</p>
+          <h3>Can it guarantee that nothing gets through?</h3>
+          <p>No automated blocker can make that guarantee. SinShield adds friction and reduces easy access, but detection can occasionally miss unsafe content or cover a safe image, so it works best as one practical layer in a broader plan.</p>
+          <p>See the <a href="/#faq">full FAQ</a> or browse the <a href="/blog">SinShield guides</a>.</p>
+        </section>
+      </article>
+    </main>`
+}
+
+function aboutBody() {
+  return `
+    <main>
+      <article>
+        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'About' }])}
+        <header>
+          <h1>A private layer of friction between a trigger and your next choice</h1>
+          <p>SinShield is an Android adult-content blocker built around a simple idea: a decision made with a clear head should have more support when an unexpected image, familiar feed, or known website appears later.</p>
+        </header>
+        <section>
+          <h2>Private protection by design</h2>
+          <ul>
+            <li><strong>On-device analysis.</strong> Visible frames in supported apps are analyzed and discarded on the phone instead of being uploaded to SinShield.</li>
+            <li><strong>Two protection layers.</strong> Screen-level covering protects supported feeds, while local DNS filtering blocks requests to known adult domains.</li>
+            <li><strong>No account.</strong> You can use SinShield without creating a cloud profile, and it does not provide remote activity reports to another person.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Why we built it</h2>
+          <p>People usually do not need another lecture about a habit they already want to change. They need practical support at the point where a routine becomes automatic, without surrendering a sensitive browsing history or a stream of screenshots to a remote service.</p>
+          <p>SinShield focuses on interruption rather than surveillance. It can cover an unsafe result, reject a known adult-domain request, and create a short pause, but the person using the phone still decides what happens next.</p>
+        </section>
+        <section>
+          <h2>What SinShield does not promise</h2>
+          <p>SinShield is not therapy, a medical treatment, or a guarantee that every unsafe image or website will be blocked. Automated detection can make mistakes, Android permissions can be revoked, and determined users can change device settings. The app is a practical protection layer, not a claim that technology can make a difficult choice disappear.</p>
+        </section>
+        <section>
+          <h2>How to reach us</h2>
+          <p>Questions, corrections, privacy concerns, and product feedback are welcome at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>. You can also read our <a href="/editorial-standards">editorial standards</a>.</p>
+        </section>
+      </article>
+    </main>`
+}
+
+function editorialStandardsBody() {
+  return `
+    <main>
+      <article>
+        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'Editorial standards' }])}
+        <header>
+          <h1>SinShield editorial standards</h1>
+          <p>Our articles are written to help readers make practical decisions without shame, inflated claims, or disguised advertising. This page explains the standard we apply before publication and after an article goes live.</p>
+        </header>
+        <section>
+          <h2>Evidence and current sources</h2>
+          <p>Research claims should link to primary studies, systematic reviews, or official guidance whenever those sources are available. We distinguish correlation from causation and state when evidence is mixed or limited.</p>
+          <p>Platform policies, prices, settings, product availability, and laws can change. We prefer official documentation, date time-sensitive claims, and encourage professional advice where an error could have legal or health consequences.</p>
+        </section>
+        <section>
+          <h2>Disclosures and reader agency</h2>
+          <p>SinShield articles may recommend SinShield, which is our product. Comparisons must disclose that relationship, give competing tools credit for jobs they perform better, and describe meaningful SinShield limitations.</p>
+          <p>We do not diagnose readers, promise a cure, moralize about an unwanted exposure, or claim that software makes relapse impossible. Technology can support a decision; it cannot make that decision on someone’s behalf.</p>
+        </section>
+        <section>
+          <h2>Our publication process</h2>
+          <ol>
+            <li>Define the reader’s specific question and practical decision.</li>
+            <li>Gather official documentation, primary research, and authoritative guidance.</li>
+            <li>Check material claims, limitations, uncertainty, and commercial disclosures.</li>
+            <li>Review for clarity, harm, hidden bias, and unsupported certainty.</li>
+            <li>Update articles when research, laws, policies, or product capabilities change.</li>
+          </ol>
+        </section>
+        <section>
+          <h2>Corrections</h2>
+          <p>Email <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a> with the article URL and the claim in question. We review correction requests against the best available source and update material errors.</p>
+          <p>Articles are published by <a href="/authors/sinshield-editorial">SinShield Editorial</a>, the product editorial function responsible for research, source checking, disclosures, and corrections.</p>
+        </section>
+      </article>
+    </main>`
+}
+
+function editorialAuthorBody() {
+  return `
+    <main>
+      <article>
+        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'Blog', href: '/blog' }, { label: 'SinShield Editorial' }])}
+        <header>
+          <h1>SinShield Editorial</h1>
+          <p>SinShield Editorial is the product editorial function behind the SinShield blog. It combines product knowledge with source-led research to publish practical guidance about adult-content protection, platform controls, digital habits, and the limits of blocking technology.</p>
+        </header>
+        <section>
+          <h2>What this byline means</h2>
+          <p>An organizational byline is used because these articles are produced and maintained as part of the SinShield product publication rather than presented as the independent opinion of a licensed clinician or lawyer. It also makes the commercial relationship clear: SinShield is our product.</p>
+        </section>
+        <section>
+          <h2>How articles are reviewed</h2>
+          <ul>
+            <li>Product and privacy claims are checked against how the current Android app works.</li>
+            <li>Research claims are traced to the cited paper, review, or authoritative guidance.</li>
+            <li>Platform rules, prices, laws, and settings are checked against current official sources.</li>
+            <li>Comparisons disclose SinShield ownership and describe alternatives and limitations.</li>
+            <li>Corrections follow our published <a href="/editorial-standards">editorial standards</a>.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Contact the editorial team</h2>
+          <p>Send source suggestions, corrections, or questions to <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>, or browse all <a href="/blog">SinShield guides</a>.</p>
         </section>
       </article>
     </main>`
@@ -481,20 +654,29 @@ const softwareApplicationSchema = {
   publisher: { '@type': 'Organization', name: 'SinShield', url: `${siteOrigin}/` },
 }
 
+const editorialOrganizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'SinShield Editorial',
+  url: `${siteOrigin}/authors/sinshield-editorial`,
+  parentOrganization: { '@type': 'Organization', name: 'SinShield', url: `${siteOrigin}/` },
+  email: SUPPORT_EMAIL,
+}
+
 const marketingPages = [
   {
-    title: 'SinShield — Private On-Device Adult Content Blocker',
+    title: 'Private Adult Content Blocker | SinShield',
     description:
-      'SinShield blocks adult content on your phone and makes it harder to give in when temptation hits. Everything stays on your device, with no accounts or activity tracking.',
+      'SinShield privately covers explicit imagery and blocks known adult sites on Android. On-device protection, no account, and no uploaded screenshots.',
     pathName: '/',
     image: '/sinshield-thumbnail.jpg',
     structuredData: [organizationSchema, websiteSchema, faqSchema(homeFaqItems)],
     body: homeBody(),
   },
   {
-    title: 'Get SinShield — Adult Content Blocker for Android',
+    title: 'Adult Content Blocker for Android | SinShield',
     description:
-      'Choose your platform and get SinShield, the private on-device adult content blocker. Available for Android with no account, no tracking, and no uploaded screenshots.',
+      'Get SinShield for Android: private screen-level adult-content covering and website blocking with no account or uploaded screenshots.',
     pathName: '/products',
     image: '/sinshield-thumbnail.jpg',
     structuredData: [
@@ -513,13 +695,27 @@ const marketingPages = [
     body: productsBody(),
   },
   {
-    title: 'SinShield for Android — Block Adult Content Privately',
+    title: 'Private Adult Content Blocker for Android | SinShield',
     description:
-      'SinShield blocks adult websites and covers explicit content inside Instagram and X, with every check kept on your phone. No accounts, no tracking, no judgment.',
+      'SinShield privately covers explicit content in supported Android apps and blocks known adult websites, with no account or uploaded screenshots.',
     pathName: '/products/android',
     image: '/sinshield-thumbnail.jpg',
     structuredData: [
       softwareApplicationSchema,
+      faqSchema([
+        {
+          question: 'Does SinShield upload screenshots?',
+          answer: 'No. Visible frames are analyzed by models running on your Android device and discarded there; SinShield does not receive those frames or use them to build an activity history.',
+        },
+        {
+          question: 'Which apps does SinShield protect?',
+          answer: 'Screen-level covering currently focuses on Instagram and X. A separate local DNS filter can block known adult domains opened from a browser or another app.',
+        },
+        {
+          question: 'Can SinShield guarantee that nothing gets through?',
+          answer: 'No automated blocker can make that guarantee. SinShield adds friction and reduces easy access, but detection can occasionally miss unsafe content or cover a safe image.',
+        },
+      ]),
       breadcrumbSchema([
         { label: 'Home', href: '/' },
         { label: 'Products', href: '/products' },
@@ -527,6 +723,72 @@ const marketingPages = [
       ]),
     ],
     body: androidBody(),
+  },
+  {
+    title: 'About SinShield | Private Android Protection',
+    description:
+      'Learn why SinShield exists, how its private Android protection works, what it can and cannot do, and how to contact the team.',
+    pathName: '/about',
+    image: '/sinshield-thumbnail.jpg',
+    structuredData: [
+      organizationSchema,
+      {
+        '@context': 'https://schema.org',
+        '@type': 'AboutPage',
+        name: 'About SinShield',
+        url: `${siteOrigin}/about`,
+        mainEntity: { '@type': 'Organization', name: 'SinShield', url: `${siteOrigin}/` },
+      },
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'About', href: '/about' },
+      ]),
+    ],
+    body: aboutBody(),
+  },
+  {
+    title: 'Editorial Standards and Corrections | SinShield',
+    description:
+      'How SinShield researches, reviews, updates, discloses conflicts, and corrects articles about digital habits and adult-content protection.',
+    pathName: '/editorial-standards',
+    image: '/sinshield-thumbnail.jpg',
+    structuredData: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        name: 'SinShield editorial standards',
+        url: `${siteOrigin}/editorial-standards`,
+        author: { '@type': 'Organization', name: 'SinShield Editorial', url: `${siteOrigin}/authors/sinshield-editorial` },
+      },
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Editorial standards', href: '/editorial-standards' },
+      ]),
+    ],
+    body: editorialStandardsBody(),
+  },
+  {
+    title: 'SinShield Editorial | Author and Review Profile',
+    description:
+      'Meet the SinShield editorial function responsible for researching, reviewing, disclosing, updating, and correcting the SinShield blog.',
+    pathName: '/authors/sinshield-editorial',
+    image: '/sinshield-thumbnail.jpg',
+    structuredData: [
+      editorialOrganizationSchema,
+      {
+        '@context': 'https://schema.org',
+        '@type': 'ProfilePage',
+        name: 'SinShield Editorial',
+        url: `${siteOrigin}/authors/sinshield-editorial`,
+        mainEntity: { '@type': 'Organization', name: 'SinShield Editorial', url: `${siteOrigin}/authors/sinshield-editorial` },
+      },
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Blog', href: '/blog' },
+        { label: 'SinShield Editorial', href: '/authors/sinshield-editorial' },
+      ]),
+    ],
+    body: editorialAuthorBody(),
   },
 ]
 
@@ -539,11 +801,34 @@ for (const page of marketingPages) {
 
 const featuredArticle = articles[0]
 const blogDocument = createDocument({
-  title: 'SinShield Blog — Healthier Digital Habits',
+  title: 'Blog | SinShield',
   description:
-    'Practical, private, and judgment-free guidance for healthier digital habits, focus, and recovery.',
+    'Evidence-aware, judgment-free guides to adult-content blocking, digital habits, focus, and recovery from the SinShield editorial team.',
   pathName: '/blog',
   image: featuredArticle.thumbnail,
+  structuredData: [
+    {
+      '@context': 'https://schema.org',
+      '@type': ['Blog', 'CollectionPage'],
+      name: 'SinShield guides',
+      description: 'Evidence-aware, judgment-free guidance about adult-content blocking, digital habits, focus, and recovery.',
+      url: `${siteOrigin}/blog`,
+      publisher: { '@type': 'Organization', name: 'SinShield', url: `${siteOrigin}/` },
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: articles.map((article, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: `${siteOrigin}${articlePath(article)}`,
+          name: article.title,
+        })),
+      },
+    },
+    breadcrumbSchema([
+      { label: 'Home', href: '/' },
+      { label: 'Blog', href: '/blog' },
+    ]),
+  ],
   body: blogBody(),
 })
 
@@ -553,7 +838,7 @@ await writeFile(path.join(distDirectory, 'blog/index.html'), blogDocument)
 for (const article of articles) {
   const directory = path.join(distDirectory, 'blog', article.slug)
   const document = createDocument({
-    title: `${article.title} — SinShield`,
+    title: `${articleMetaTitle(article)} | SinShield`,
     description: article.description,
     pathName: articlePath(article),
     image: article.thumbnail,
@@ -573,10 +858,15 @@ for (const article of articles) {
   await writeFile(path.join(directory, 'index.html'), document)
 }
 
-const sitemapPaths = ['/', '/products', '/products/android', '/blog', ...articles.map(articlePath)]
+const pageLastModified = '2026-09-18'
+const sitemapEntries = [
+  ...marketingPages.map((page) => ({ pathName: page.pathName, lastmod: pageLastModified })),
+  { pathName: '/blog', lastmod: articles.reduce((latest, article) => article.publishedAt > latest ? article.publishedAt : latest, '') },
+  ...articles.map((article) => ({ pathName: articlePath(article), lastmod: article.updatedAt ?? article.publishedAt })),
+]
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${sitemapPaths.map((pathName) => `  <url><loc>${escapeHtml(`${siteOrigin}${pathName}`)}</loc></url>`).join('\n')}
+${sitemapEntries.map(({ pathName, lastmod }) => `  <url><loc>${escapeHtml(`${siteOrigin}${pathName}`)}</loc><lastmod>${lastmod}</lastmod></url>`).join('\n')}
 </urlset>
 `
 

@@ -6,7 +6,8 @@ defineOptions({ name: 'TermsAndConditionsView' })
 
 usePageMetadata({
   title: 'Terms & Conditions | SinShield',
-  description: 'Read the terms and conditions governing use of the SinShield app and website.',
+  description:
+    'These terms explain the conditions for using the SinShield Android app and website, including user responsibilities, warranties, and limitations of liability.',
   path: '/terms-and-conditions',
 })
 </script>

@@ -154,8 +154,10 @@ function parseBody(body, sourceName) {
 
 function normalizedMetadata(data) {
   const metadata = { ...data }
-  if (metadata.publishedAt instanceof Date) {
-    metadata.publishedAt = metadata.publishedAt.toISOString().slice(0, 10)
+  for (const field of ['publishedAt', 'updatedAt']) {
+    if (metadata[field] instanceof Date) {
+      metadata[field] = metadata[field].toISOString().slice(0, 10)
+    }
   }
   return metadata
 }
@@ -174,6 +176,9 @@ export function parseArticleMarkdown(source, sourceName = 'article') {
   }
   if (metadata.featured !== undefined && typeof metadata.featured !== 'boolean') {
     fail(sourceName, '"featured" must be true or false')
+  }
+  if (metadata.updatedAt !== undefined && typeof metadata.updatedAt !== 'string') {
+    fail(sourceName, '"updatedAt" must be an ISO date string')
   }
 
   return { ...metadata, sections: parseBody(parsed.content, sourceName) }

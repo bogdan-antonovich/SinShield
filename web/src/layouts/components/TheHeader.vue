@@ -33,7 +33,7 @@ const navItems: NavItem[] = [
     ],
   },
   { label: 'Blog', to: '/blog' },
-  // { label: 'About', to: '#about' },
+  { label: 'About', to: '/about' },
   // { label: 'Premium', to: '/premium' },
 ]
 

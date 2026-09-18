@@ -1,7 +1,7 @@
 ---
 slug: benefits-of-quitting-porn
 title: "Benefits of Quitting Porn: 8 Realistic Changes You May Notice"
-description: "Quitting porn may give you back time, attention, sleep, and a greater sense of choice, but the benefits depend on how the habit was affecting your life."
+description: "Quitting porn may improve time, attention, sleep, and agency when the habit was disrupting your life. Here is what the evidence supports."
 author: "SinShield Editorial"
 publishedAt: 2026-09-15
 readingTime: "10 min read"

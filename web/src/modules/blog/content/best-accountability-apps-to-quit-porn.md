@@ -1,7 +1,7 @@
 ---
 slug: best-accountability-apps-to-quit-porn
 title: "The 9 Best Accountability Apps to Quit Porn in 2026"
-description: "An honest comparison of nine accountability apps for quitting porn, looking at how each one works, what it costs, where it falls short, and how to choose the one that fits you."
+description: "Compare nine accountability and blocking apps for quitting porn, including how they work, current costs, limitations, and best use cases."
 author: "SinShield Editorial"
 publishedAt: 2026-09-14
 readingTime: "12 min read"

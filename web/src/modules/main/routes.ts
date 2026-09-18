@@ -6,6 +6,21 @@ const mainRoutes: RouteRecordRaw[] = [
     name: 'home',
     component: () => import('@/views/Home.vue'),
   },
+  {
+    path: '/about',
+    name: 'about',
+    component: () => import('@/views/About.vue'),
+  },
+  {
+    path: '/editorial-standards',
+    name: 'editorial-standards',
+    component: () => import('@/views/EditorialStandards.vue'),
+  },
+  {
+    path: '/authors/sinshield-editorial',
+    name: 'sinshield-editorial',
+    component: () => import('@/views/SinShieldEditorial.vue'),
+  },
 ]
 
 export default mainRoutes

@@ -25,10 +25,10 @@ const visibleArticles = computed(() => getBlogPage(libraryArticles, currentPage.
 usePageMetadata(() => ({
   title:
     currentPage.value === 1
-      ? 'SinShield Blog — Healthier Digital Habits'
+      ? 'Blog | SinShield'
       : `SinShield Blog — Page ${currentPage.value}`,
   description:
-    'Practical, private, and judgment-free guidance for healthier digital habits, focus, and recovery.',
+    'Evidence-aware, judgment-free guides to adult-content blocking, digital habits, focus, and recovery from the SinShield editorial team.',
   path: currentPage.value === 1 ? '/blog' : `/blog?page=${currentPage.value}`,
   image: featuredArticle?.thumbnail,
 }))

@@ -7,7 +7,7 @@ defineOptions({ name: 'PrivacyPolicyView' })
 usePageMetadata({
   title: 'Privacy Policy | SinShield',
   description:
-    'Learn how the SinShield Android app and website handle information and protect your privacy.',
+    'This policy explains what information the SinShield Android app and website process, where it is stored, and when third-party services are involved.',
   path: '/privacy-policy',
 })
 </script>
