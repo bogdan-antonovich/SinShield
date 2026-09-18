@@ -3,8 +3,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseSigningEnvironment = mapOf(
+    "storeFile" to providers.environmentVariable("ANDROID_KEYSTORE_PATH"),
+    "storePassword" to providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD"),
+    "keyAlias" to providers.environmentVariable("ANDROID_KEY_ALIAS"),
+    "keyPassword" to providers.environmentVariable("ANDROID_KEY_PASSWORD"),
+)
+val configuredReleaseSigningValues = releaseSigningEnvironment.filterValues { it.isPresent }
+
+check(configuredReleaseSigningValues.isEmpty() || configuredReleaseSigningValues.size == releaseSigningEnvironment.size) {
+    "Release signing is only partially configured. Set all ANDROID_KEYSTORE_* variables or none of them."
+}
+
 android {
-    namespace = "com.example.sinshield"
+    namespace = "app.sinshield"
     compileSdk {
         version = release(37)
     }
@@ -13,10 +25,21 @@ android {
         applicationId = "app.sinshield"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = providers.gradleProperty("releaseVersionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("releaseVersionName").orNull ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (configuredReleaseSigningValues.isNotEmpty()) {
+            create("release") {
+                storeFile = file(releaseSigningEnvironment.getValue("storeFile").get())
+                storePassword = releaseSigningEnvironment.getValue("storePassword").get()
+                keyAlias = releaseSigningEnvironment.getValue("keyAlias").get()
+                keyPassword = releaseSigningEnvironment.getValue("keyPassword").get()
+            }
+        }
     }
 
     buildTypes {
@@ -34,6 +57,9 @@ android {
             }
         }
         release {
+            if (configuredReleaseSigningValues.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
