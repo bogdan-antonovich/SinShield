@@ -90,7 +90,9 @@ class ShieldAccessibilityService : AccessibilityService() {
         override fun onGoBack() = recovery.goBackFromSite()
     }
 
-    private val monitoredPackages = socialPackages + browserPackages
+    // Browser packages remain available for DNS-site overlays, but do not enter screenshot
+    // monitoring while app protection is intentionally limited to Instagram and X.
+    private val monitoredPackages = socialPackages /* + browserPackages */
 
     private val blockedDomainReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -669,10 +671,12 @@ class ShieldAccessibilityService : AccessibilityService() {
         private val socialPackages = setOf(
             ShieldedApp.INSTAGRAM.packageName,
             ShieldedApp.X.packageName,
-            ShieldedApp.FACEBOOK.packageName,
-            ShieldedApp.FACEBOOK_LITE.packageName,
-            ShieldedApp.REDDIT.packageName,
-            "org.telegram.messenger",
+            // Keep these entry points available for future support, but do not monitor them while
+            // screen protection is intentionally limited to Instagram and X.
+            // ShieldedApp.FACEBOOK.packageName,
+            // ShieldedApp.FACEBOOK_LITE.packageName,
+            // ShieldedApp.REDDIT.packageName,
+            // "org.telegram.messenger",
         )
 
         private val browserPackages = setOf(

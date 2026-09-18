@@ -33,11 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -135,6 +137,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     var domainError by remember { mutableStateOf<String?>(null) }
     var details by remember { mutableStateOf<SettingDetails?>(null) }
     var setupGuide by remember { mutableStateOf<SetupGuide?>(null) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
     var debugPhotoDumps by remember { mutableStateOf(DebugSettings.photoDumps(context)) }
     var debugOverlayFeedback by remember { mutableStateOf(DebugSettings.overlayFeedback(context)) }
     var debugOverlayDismiss by remember { mutableStateOf(DebugSettings.overlayDismiss(context)) }
@@ -234,6 +237,25 @@ fun MainScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    if (showAccessibilityDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityDisclosure = false },
+            title = { Text(stringResource(R.string.accessibility_disclosure_title), color = Ink) },
+            text = { Text(stringResource(R.string.accessibility_disclosure_body), color = MutedInk) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAccessibilityDisclosure = false
+                    openAccessibilitySettings(context)
+                }) { Text(stringResource(R.string.accessibility_disclosure_accept)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityDisclosure = false }) {
+                    Text(stringResource(R.string.accessibility_disclosure_cancel))
+                }
+            }
+        )
+    }
+
     setupGuide?.let { guide ->
         val enabled = when (guide) {
             SetupGuide.ACCESSIBILITY -> accessibility
@@ -245,7 +267,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
         }
         val openSettings = {
             when (guide) {
-                SetupGuide.ACCESSIBILITY -> openAccessibilitySettings(context)
+                SetupGuide.ACCESSIBILITY ->
+                    if (accessibility) openAccessibilitySettings(context)
+                    else showAccessibilityDisclosure = true
                 SetupGuide.OVERLAY -> openOverlaySettings(context)
                 SetupGuide.BATTERY -> batterySettingsLauncher.launch(batterySettingsIntent(context))
                 SetupGuide.DEVICE_BACKGROUND -> {
@@ -636,7 +660,26 @@ fun MainScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
+        Spacer(Modifier.height(24.dp))
+        Text(
+            stringResource(R.string.privacy_policy_link),
+            color = MutedInk,
+            fontSize = 14.sp,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier
+                .clickable { openPrivacyPolicy(context) }
+                .padding(8.dp)
+        )
         Spacer(Modifier.height(36.dp))
+    }
+}
+
+private fun openPrivacyPolicy(context: Context) {
+    val url = context.getString(R.string.privacy_policy_url)
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 
