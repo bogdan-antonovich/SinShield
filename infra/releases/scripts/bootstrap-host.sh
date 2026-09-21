@@ -9,6 +9,7 @@ nginx_enabled="/etc/nginx/sites-enabled/$domain"
 publisher_path="/usr/local/sbin/sinshield-release-publish"
 sudoers_path="/etc/sudoers.d/sinshield-release-publish"
 certbot_hook_path="/etc/letsencrypt/renewal-hooks/deploy/sinshield-releases-nginx"
+map_hash_config_path="/etc/nginx/conf.d/00-sinshield-releases-map-hash.conf"
 
 fail() {
   echo "ERROR: $*" >&2
@@ -43,6 +44,9 @@ install -d -o "$deploy_user" -g "$deploy_user" -m 0750 "$deploy_home/sinshield-r
 
 install -o root -g root -m 0755 "$script_dir/sinshield-release-publish" "$publisher_path"
 install -o root -g root -m 0755 "$script_dir/certbot-deploy-hook.sh" "$certbot_hook_path"
+install -o root -g root -m 0644 \
+  "$release_root/nginx/00-sinshield-releases-map-hash.conf" \
+  "$map_hash_config_path"
 
 temporary_sudoers="$(mktemp)"
 trap 'rm -f "$temporary_sudoers"' EXIT

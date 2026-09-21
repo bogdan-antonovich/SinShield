@@ -91,17 +91,10 @@ required_files=(
   "release.json"
 )
 
-[ -d "$staging_dir" ] || fail "Staged release directory does not exist: $staging_dir"
-
-for filename in "${required_files[@]}"; do
-  path="$staging_dir/$filename"
-  [ -f "$path" ] || fail "Required release file is missing: $filename"
-  [ ! -L "$path" ] || fail "Symbolic links are not allowed in release staging."
-done
-
 verify_checksum() {
-  local artifact_name="$1"
-  local checksum_file="$staging_dir/$artifact_name.sha256"
+  local release_dir="$1"
+  local artifact_name="$2"
+  local checksum_file="$release_dir/$artifact_name.sha256"
   local expected_name expected_hash actual_hash extra
 
   read -r expected_hash expected_name extra < "$checksum_file"
@@ -111,20 +104,39 @@ verify_checksum() {
   [ "$expected_name" = "$artifact_name" ] || fail "Checksum filename mismatch for $artifact_name."
   [ -z "${extra:-}" ] || fail "Unexpected checksum content for $artifact_name."
 
-  actual_hash="$(sha256sum "$staging_dir/$artifact_name" | cut -d ' ' -f 1)"
+  actual_hash="$(sha256sum "$release_dir/$artifact_name" | cut -d ' ' -f 1)"
   [ "$actual_hash" = "$expected_hash" ] || fail "Checksum verification failed for $artifact_name."
 }
 
-verify_checksum "$aab_name"
-verify_checksum "$apk_name"
+verify_release_directory() {
+  local release_dir="$1"
+  local description="$2"
+  local filename path
+
+  [ -d "$release_dir" ] || fail "$description directory does not exist: $release_dir"
+
+  for filename in "${required_files[@]}"; do
+    path="$release_dir/$filename"
+    [ -f "$path" ] || fail "$description is missing required file: $filename"
+    [ ! -L "$path" ] || fail "$description must not contain symbolic links."
+  done
+
+  verify_checksum "$release_dir" "$aab_name"
+  verify_checksum "$release_dir" "$apk_name"
+  grep -Fq '"tag": "'"$tag"'"' "$release_dir/release.json" \
+    || fail "$description metadata does not identify release $tag."
+}
+
+verify_release_directory "$staging_dir" "Staged release"
+
+# Validate and reload Nginx before committing a new immutable release. A bad
+# authentication configuration must not leave a partially published version.
+configure_auth
 
 if [ -e "$target_dir" ]; then
   [ -d "$target_dir" ] || fail "Release target exists and is not a directory."
-  for filename in "${required_files[@]}"; do
-    cmp --silent "$staging_dir/$filename" "$target_dir/$filename" \
-      || fail "Release $tag already exists with different content."
-  done
-  echo "Release $tag is already published with identical content."
+  verify_release_directory "$target_dir" "Published release"
+  echo "Release $tag is already published; retaining its verified immutable artifacts."
 else
   trap 'rm -rf "$temporary_dir"' EXIT
   install -d -o root -g "$nginx_group" -m 0750 "$temporary_dir"
@@ -144,5 +156,4 @@ latest_json="$document_root/.latest.json.tmp.$$"
 install -o root -g "$nginx_group" -m 0640 "$target_dir/release.json" "$latest_json"
 mv -f "$latest_json" "$document_root/latest.json"
 
-configure_auth
 echo "Release $tag is available through the authenticated endpoint."

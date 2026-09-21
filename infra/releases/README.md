@@ -96,7 +96,9 @@ sudo CERTBOT_EMAIL=admin@sinshield.app \
 The script installs a root-owned publisher and grants the deployment user passwordless sudo access
 only to that publisher. It does not grant general passwordless sudo. The initial random token denies
 all access; the first successful tagged deployment replaces it with `RELEASES_ACCESS_TOKEN`. A
-Certbot deploy hook validates and reloads Nginx after future certificate renewals.
+Certbot deploy hook validates and reloads Nginx after future certificate renewals. Bootstrap also
+installs an Nginx map-hash configuration large enough for the maximum supported access-token
+length.
 
 Every later deployment refreshes the unprivileged infrastructure copy automatically. If the
 root-owned publisher differs from the tagged repository copy, deployment stops and asks an
@@ -107,8 +109,9 @@ automatically.
 
 Push a semantic version tag such as `v1.0.0`. Android CD performs lint and unit tests, derives
 `versionCode` as `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH`, builds and verifies signed AAB and APK
-artifacts, and publishes them atomically. Existing tag directories cannot be overwritten with
-different content.
+artifacts, validates the Nginx authentication configuration, and publishes the release atomically.
+An existing tag directory is checksum-verified and retained because independently signed Android
+builds are not guaranteed to be byte-for-byte identical.
 
 For a manual endpoint check:
 
@@ -121,5 +124,5 @@ EXPECTED_RELEASE_TAG='v1.0.0' \
 ## Token rotation
 
 Change `RELEASES_ACCESS_TOKEN` in GitHub and rerun the Android CD job for the current tag. Publishing
-is idempotent when the artifacts match, and the VPS replaces the authorization token during that
-run. The previous token stops working immediately after Nginx reloads.
+is idempotent: the VPS verifies and retains the existing immutable artifacts while replacing the
+authorization token. The previous token stops working immediately after Nginx reloads.
