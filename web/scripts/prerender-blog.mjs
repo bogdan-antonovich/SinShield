@@ -450,22 +450,23 @@ function productsBody() {
         </section>
         <section>
           <h2>Is SinShield the right protection for you?</h2>
-          <p>SinShield is built for Android users who want private, automatic friction between an unexpected trigger and the next action. It analyzes visible content in supported apps on the device and separately blocks requests to known adult websites, so the two protection layers cover different routes without creating a cloud activity profile.</p>
-          <h3>A good fit when</h3>
+          <p>If adult content keeps finding its way onto your phone, wanting to stop is only part of the answer. SinShield gives you protection at the moments when temptation is easiest to reach, so you have a better chance to pause, step away, and stay in control.</p>
+          <h3>You are tired of fighting the same moment</h3>
           <ul>
-            <li>You use Android 11 or newer.</li>
-            <li>You want image analysis to stay on your phone.</li>
-            <li>You need protection in Instagram, X, and the browser.</li>
-            <li>You prefer no account and no partner reports.</li>
+            <li>One unexpected image can pull you toward content you meant to avoid.</li>
+            <li>Adult websites are still too easy to reach when your resolve is low.</li>
+            <li>You do not want to depend on willpower after temptation has appeared.</li>
+            <li>You want a pause between the urge and the next action.</li>
           </ul>
-          <h3>Know the limits</h3>
+          <h3>You want support that still feels like yours</h3>
           <ul>
-            <li>SinShield is not currently available for iPhone.</li>
-            <li>Automatic detection can miss content or cover a safe image.</li>
-            <li>It does not send accountability reports to another person.</li>
-            <li>Android permits only one local VPN at a time.</li>
+            <li>You want protection to step in quietly while you use your phone.</li>
+            <li>You want your screenshots and browsing activity to stay private.</li>
+            <li>You want to choose how strict your protection should be.</li>
+            <li>You want practical help without judgment, surveillance, or reports.</li>
           </ul>
-          <p>Read how <a href="/products/android">SinShield for Android works</a>, or review our <a href="/privacy-policy">privacy policy</a> before installing.</p>
+          <p>If these moments feel familiar, you do not need another promise to try harder. You need protection that is already there when the difficult moment arrives. That is what SinShield is built to give you.</p>
+          <p><a href="${GOOGLE_PLAY_URL}" target="_blank" rel="noopener noreferrer">Get SinShield for Android</a></p>
         </section>
       </article>
     </main>`
@@ -481,6 +482,24 @@ const androidFeatures = [
   ['Website control', 'Built-in + custom', 'Block known adult sites and add domains of your own.'],
 ]
 
+const androidFaqItems = [
+  {
+    question: 'Does SinShield upload screenshots?',
+    answer:
+      'No. Visible frames are analyzed by models running on your Android device and discarded there; SinShield does not receive those frames or use them to build an activity history.',
+  },
+  {
+    question: 'Which apps does it protect?',
+    answer:
+      'Screen-level covering currently focuses on Instagram and X. A separate local DNS filter can block known adult domains opened from a browser or another app, and you can add domains to a personal block list.',
+  },
+  {
+    question: 'Can it guarantee that nothing gets through?',
+    answer:
+      'No automated blocker can make that guarantee. SinShield adds friction and reduces easy access, but detection can occasionally miss unsafe content or cover a safe image, so it works best as one practical layer in a broader plan.',
+  },
+]
+
 function androidBody() {
   return `
     <main>
@@ -492,21 +511,23 @@ function androidBody() {
           <p><a href="${GOOGLE_PLAY_URL}" target="_blank" rel="noopener noreferrer">Get it on Google Play</a></p>
         </section>
         <section>
-          <h2>Protection Without Giving Up Your Privacy</h2>
-          <p>SinShield protects Instagram and X, blocks known adult websites, and keeps every image check on your phone. It gives you practical control over what reaches your screen without accounts, activity tracking, or uploaded screenshots.</p>
+          <h2>What SinShield Does for You</h2>
+          <p>SinShield gives you practical protection in the places where adult content is easiest to reach. It covers unsafe content in supported apps, blocks known adult websites, keeps every check on your phone, and lets you decide how strict protection should be.</p>
           <ul>
             ${androidFeatures.map(([label, value, detail]) => `<li><strong>${escapeHtml(label)}: ${escapeHtml(value)}.</strong> ${escapeHtml(detail)}</li>`).join('\n            ')}
           </ul>
         </section>
-        <section>
+        <section id="android-faq">
           <h2>What should you know before using SinShield?</h2>
-          <h3>Does SinShield upload screenshots?</h3>
-          <p>No. Visible frames are analyzed by models running on your Android device and discarded there; SinShield does not receive those frames or use them to build an activity history.</p>
-          <h3>Which apps does it protect?</h3>
-          <p>Screen-level covering currently focuses on Instagram and X. A separate local DNS filter can block known adult domains opened from a browser or another app, and you can add domains to a personal block list.</p>
-          <h3>Can it guarantee that nothing gets through?</h3>
-          <p>No automated blocker can make that guarantee. SinShield adds friction and reduces easy access, but detection can occasionally miss unsafe content or cover a safe image, so it works best as one practical layer in a broader plan.</p>
-          <p>See the <a href="/#faq">full FAQ</a> or browse the <a href="/blog">SinShield guides</a>.</p>
+          ${androidFaqItems
+            .map(
+              (item) => `
+          <details>
+            <summary>${escapeHtml(item.question)}</summary>
+            <p>${escapeHtml(item.answer)}</p>
+          </details>`,
+            )
+            .join('\n')}
         </section>
       </article>
     </main>`
@@ -588,7 +609,7 @@ function editorialAuthorBody() {
   return `
     <main>
       <article>
-        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'Blog', href: '/blog' }, { label: 'SinShield Editorial' }])}
+        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'Authors', href: '/authors' }, { label: 'SinShield Editorial' }])}
         <header>
           <h1>SinShield Editorial</h1>
           <p>SinShield Editorial is the product editorial function behind the SinShield blog. It combines product knowledge with source-led research to publish practical guidance about adult-content protection, platform controls, digital habits, and the limits of blocking technology.</p>
@@ -611,6 +632,19 @@ function editorialAuthorBody() {
           <h2>Contact the editorial team</h2>
           <p>Send source suggestions, corrections, or questions to <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>, or browse all <a href="/blog">SinShield guides</a>.</p>
         </section>
+      </article>
+    </main>`
+}
+
+function authorsBody() {
+  return `
+    <main>
+      <article>
+        ${breadcrumbNav([{ label: 'Home', href: '/' }, { label: 'Authors' }])}
+        <h1>Authors</h1>
+        <h2><a href="/authors/sinshield-editorial">SinShield Editorial</a></h2>
+        <p>The SinShield editorial function researches, reviews, updates, and corrects practical guides about adult-content protection, platform controls, and digital habits.</p>
+        <p><a href="/authors/sinshield-editorial">View author profile</a></p>
       </article>
     </main>`
 }
@@ -702,20 +736,7 @@ const marketingPages = [
     image: '/sinshield-thumbnail.jpg',
     structuredData: [
       softwareApplicationSchema,
-      faqSchema([
-        {
-          question: 'Does SinShield upload screenshots?',
-          answer: 'No. Visible frames are analyzed by models running on your Android device and discarded there; SinShield does not receive those frames or use them to build an activity history.',
-        },
-        {
-          question: 'Which apps does SinShield protect?',
-          answer: 'Screen-level covering currently focuses on Instagram and X. A separate local DNS filter can block known adult domains opened from a browser or another app.',
-        },
-        {
-          question: 'Can SinShield guarantee that nothing gets through?',
-          answer: 'No automated blocker can make that guarantee. SinShield adds friction and reduces easy access, but detection can occasionally miss unsafe content or cover a safe image.',
-        },
-      ]),
+      faqSchema(androidFaqItems),
       breadcrumbSchema([
         { label: 'Home', href: '/' },
         { label: 'Products', href: '/products' },
@@ -768,9 +789,41 @@ const marketingPages = [
     body: editorialStandardsBody(),
   },
   {
+    title: 'Authors | SinShield',
+    description:
+      'Meet the author and reviewer responsible for researching, reviewing, updating, and correcting SinShield guides.',
+    pathName: '/authors',
+    image: '/sinshield-thumbnail.jpg',
+    structuredData: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        name: 'SinShield authors',
+        url: `${siteOrigin}/authors`,
+        mainEntity: {
+          '@type': 'ItemList',
+          numberOfItems: 1,
+          itemListElement: [
+            {
+              '@type': 'ListItem',
+              position: 1,
+              url: `${siteOrigin}/authors/sinshield-editorial`,
+              name: 'SinShield Editorial',
+            },
+          ],
+        },
+      },
+      breadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Authors', href: '/authors' },
+      ]),
+    ],
+    body: authorsBody(),
+  },
+  {
     title: 'SinShield Editorial | Author and Review Profile',
     description:
-      'Meet the SinShield editorial function responsible for researching, reviewing, disclosing, updating, and correcting the SinShield blog.',
+      'Meet the SinShield author responsible for researching, reviewing, disclosing, updating, and correcting every SinShield guide.',
     pathName: '/authors/sinshield-editorial',
     image: '/sinshield-thumbnail.jpg',
     structuredData: [
@@ -784,7 +837,7 @@ const marketingPages = [
       },
       breadcrumbSchema([
         { label: 'Home', href: '/' },
-        { label: 'Blog', href: '/blog' },
+        { label: 'Authors', href: '/authors' },
         { label: 'SinShield Editorial', href: '/authors/sinshield-editorial' },
       ]),
     ],

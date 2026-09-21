@@ -65,15 +65,15 @@ const features: Feature[] = [
         <h2
           class="font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[44px] lg:text-[56px]"
         >
-          Protection Without Giving Up Your Privacy
+          What SinShield Does for You
         </h2>
 
         <p
           class="mx-auto mt-6 max-w-3xl text-lg font-normal leading-[1.55] text-navy/75 sm:text-xl"
         >
-          SinShield protects Instagram and X, blocks known adult websites, and keeps every image
-          check on your phone. It gives you practical control over what reaches your screen without
-          accounts, activity tracking, or uploaded screenshots.
+          SinShield gives you practical protection in the places where adult content is easiest to
+          reach. It covers unsafe content in supported apps, blocks known adult websites, keeps
+          every check on your phone, and lets you decide how strict protection should be.
         </p>
       </div>
 
@@ -86,7 +86,7 @@ const features: Feature[] = [
           class="flex min-h-56 flex-col bg-white p-6 sm:min-h-64 sm:p-8 lg:min-h-72"
           :class="feature.featured ? 'sm:col-span-2 lg:col-span-2' : ''"
         >
-          <div class="flex items-center gap-3 text-navy/55">
+          <div class="flex items-center gap-3 text-primary">
             <svg
               v-if="feature.icon === 'privacy'"
               viewBox="0 0 24 24"
@@ -239,7 +239,7 @@ const features: Feature[] = [
             >
               {{ feature.value }}
             </p>
-            <p class="mt-4 max-w-md text-[15px] leading-[1.5] text-navy/60 sm:text-base">
+            <p class="mt-4 max-w-md text-[15px] leading-[1.5] text-navy/70 sm:text-base">
               {{ feature.detail }}
             </p>
           </div>

@@ -17,6 +17,11 @@ const mainRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/EditorialStandards.vue'),
   },
   {
+    path: '/authors',
+    name: 'authors',
+    component: () => import('@/views/Authors.vue'),
+  },
+  {
     path: '/authors/sinshield-editorial',
     name: 'sinshield-editorial',
     component: () => import('@/views/SinShieldEditorial.vue'),

@@ -249,7 +249,6 @@ usePageMetadata(() => {
 
       <div class="mx-auto mt-16 max-w-3xl border-t border-navy/10 pt-8">
         <div class="mb-12 rounded-3xl bg-white p-7 ring-1 ring-navy/8 sm:p-8">
-          <p class="font-display text-sm font-bold uppercase tracking-[0.16em] text-primary">About this article</p>
           <p class="mt-3 leading-7 text-navy/70">Published by <RouterLink to="/authors/sinshield-editorial" class="font-semibold text-primary underline underline-offset-4">SinShield Editorial</RouterLink> under our <RouterLink to="/editorial-standards" class="font-semibold text-primary underline underline-offset-4">editorial standards</RouterLink>. Product ownership, limitations, source quality, and corrections are reviewed before publication.</p>
         </div>
 
@@ -280,7 +279,6 @@ usePageMetadata(() => {
 
   <main v-else class="grid min-h-[70vh] place-items-center bg-background-soft px-6 pb-24 pt-40 text-center">
     <div>
-      <p class="text-sm font-bold uppercase tracking-[0.18em] text-primary">404</p>
       <h1 class="mt-4 font-display text-5xl font-extrabold tracking-[-0.04em] text-navy">Article not found</h1>
       <p class="mt-5 text-lg text-navy/60">The story may have moved or the address may be incorrect.</p>
       <RouterLink

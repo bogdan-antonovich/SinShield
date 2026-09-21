@@ -1,16 +1,7 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
-import BaseButton from '@/common/components/BaseButton.vue'
-import BaseContainer from '@/common/components/BaseContainer.vue'
+import InteractiveShowcaseSection from '@/common/components/InteractiveShowcaseSection.vue'
 
-interface Step {
-  title: string
-  description: string
-  illustration: string
-  illustrationAlt: string
-}
-
-const steps: Step[] = [
+const steps = [
   {
     title: 'A screen change starts a scan',
     description:
@@ -40,124 +31,14 @@ const steps: Step[] = [
     illustrationAlt: 'A protective shield covering unsafe content',
   },
 ]
-
-const activeIndex = ref(0)
-const tabRefs = ref<HTMLButtonElement[]>([])
-
-function setTabRef(element: unknown, index: number) {
-  if (element instanceof HTMLButtonElement) tabRefs.value[index] = element
-}
-
-async function selectStep(index: number, moveFocus = false) {
-  activeIndex.value = index
-  if (moveFocus) {
-    await nextTick()
-    tabRefs.value[index]?.focus()
-  }
-}
-
-function onTabKeydown(event: KeyboardEvent, index: number) {
-  let nextIndex: number | null = null
-
-  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-    nextIndex = (index + 1) % steps.length
-  } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-    nextIndex = (index - 1 + steps.length) % steps.length
-  } else if (event.key === 'Home') {
-    nextIndex = 0
-  } else if (event.key === 'End') {
-    nextIndex = steps.length - 1
-  }
-
-  if (nextIndex !== null) {
-    event.preventDefault()
-    void selectStep(nextIndex, true)
-  }
-}
 </script>
 
 <template>
-  <section id="how-it-works" class="app-shell py-16 sm:py-20 lg:py-32">
-    <BaseContainer>
-      <div class="grid gap-14 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-20 xl:gap-28">
-        <div
-          id="how-it-works-panel"
-          class="order-2 flex min-w-0 flex-col lg:order-1"
-          role="tabpanel"
-          :aria-labelledby="`how-it-works-tab-${activeIndex}`"
-          tabindex="0"
-        >
-          <div class="aspect-[4/3] w-full overflow-hidden rounded-[1.75rem] shadow-2xl shadow-black/20">
-            <img
-              :src="steps[activeIndex]?.illustration"
-              :alt="steps[activeIndex]?.illustrationAlt"
-              width="800"
-              height="600"
-              draggable="false"
-              class="h-full w-full select-none object-cover"
-            />
-          </div>
-
-          <div class="max-w-xl lg:mt-8 lg:min-h-64 xl:min-h-56">
-            <h3 class="font-display text-2xl font-bold tracking-[-0.02em] text-white">
-              {{ steps[activeIndex]?.title }}
-            </h3>
-            <p class="mt-3 text-lg font-normal leading-[1.55] text-white/75 sm:text-xl">
-              {{ steps[activeIndex]?.description }}
-            </p>
-          </div>
-
-          <BaseButton to="/products/android" variant="inverse" class="mt-8 w-full sm:w-fit lg:mt-6">
-            Get Started
-          </BaseButton>
-        </div>
-
-        <div class="order-1 lg:order-2 lg:pt-1">
-          <h2
-            class="max-w-2xl font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-white sm:text-[44px] lg:text-[56px]"
-          >
-            How SinShield Works
-          </h2>
-
-          <p class="mt-6 max-w-2xl text-lg font-normal leading-[1.55] text-white/75 sm:text-xl">
-            Inside protected apps, SinShield responds to screen changes, captures the current frame,
-            analyzes it with on-device models, and covers content that receives an unsafe verdict.
-            Website protection checks DNS requests against an adult-domain list and rejects matches
-            before the site loads.
-          </p>
-
-          <div
-            class="mt-10 border-t border-white/20 sm:mt-12"
-            role="tablist"
-            aria-label="How SinShield works"
-            aria-orientation="vertical"
-          >
-            <button
-              v-for="(step, index) in steps"
-              :id="`how-it-works-tab-${index}`"
-              :key="step.title"
-              :ref="(element) => setTabRef(element, index)"
-              type="button"
-              role="tab"
-              :aria-selected="activeIndex === index"
-              aria-controls="how-it-works-panel"
-              :tabindex="activeIndex === index ? 0 : -1"
-              class="group flex min-h-14 w-full items-center border-b border-white/20 py-4 text-left sm:py-6"
-              @click="selectStep(index)"
-              @keydown="onTabKeydown($event, index)"
-            >
-              <span
-                class="font-display text-xl font-bold leading-tight tracking-[-0.02em] sm:text-[26px] lg:text-[28px]"
-                :class="
-                  activeIndex === index ? 'text-white' : 'text-white/35 group-hover:text-white/60'
-                "
-              >
-                {{ step.title }}
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </BaseContainer>
-  </section>
+  <InteractiveShowcaseSection
+    id="how-it-works"
+    heading="How SinShield Works"
+    description="Inside protected apps, SinShield responds to screen changes, captures the current frame, analyzes it with on-device models, and covers content that receives an unsafe verdict. Website protection checks DNS requests against an adult-domain list and rejects matches before the site loads."
+    :items="steps"
+    tablist-label="How SinShield works"
+  />
 </template>

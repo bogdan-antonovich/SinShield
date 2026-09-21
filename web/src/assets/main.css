@@ -1,18 +1,18 @@
 @import './base.css';
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   /* Brand colors — mirror the Android app (Theme.kt) so web + app match.
      Registering them here also generates utilities:
      text-primary, bg-primary, text-navy, bg-surface, ring-accent, … */
-  --color-primary: #087CF0;
-  --color-primary-dark: #0A5FB8;
-  --color-accent: #00D782;
+  --color-primary: #087cf0;
+  --color-primary-dark: #0a5fb8;
+  --color-accent: #00d782;
   --color-navy: #002945;
-  --color-surface: #F9FBFF;
+  --color-surface: #f9fbff;
 
-  --font-sans: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: 'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 body {
@@ -39,4 +39,18 @@ body {
 .app-shell {
   background: linear-gradient(325deg, #12a6e8 0%, #087cf0 48%, #1c4fd8 100%);
   background-attachment: fixed;
+}
+
+.about-footer-blend {
+  background:
+    linear-gradient(
+      to bottom,
+      #ffffff 0%,
+      rgb(255 255 255 / 98%) 26%,
+      rgb(255 255 255 / 78%) 48%,
+      rgb(255 255 255 / 18%) 78%,
+      transparent 100%
+    ),
+    linear-gradient(325deg, #12a6e8 0%, #087cf0 48%, #1c4fd8 100%);
+  background-attachment: scroll, fixed;
 }

@@ -12,6 +12,7 @@
 
 - [About SinShield](https://sinshield.app/about): Why SinShield exists, how its private protection works, its limitations, and contact information.
 - [Editorial standards](https://sinshield.app/editorial-standards): Research, review, disclosure, update, and corrections policy for SinShield articles.
+- [Authors](https://sinshield.app/authors): Directory of SinShield authors and reviewers.
 - [SinShield Editorial](https://sinshield.app/authors/sinshield-editorial): Author and reviewer profile for the team that maintains the SinShield blog.
 
 ## Guides and research

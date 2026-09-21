@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import BaseContainer from '@/common/components/BaseContainer.vue'
 
 interface FaqItem {
@@ -6,7 +8,7 @@ interface FaqItem {
   answer: string
 }
 
-const faqItems: FaqItem[] = [
+const defaultFaqItems: FaqItem[] = [
   {
     question: 'What does SinShield block?',
     answer:
@@ -48,20 +50,35 @@ const faqItems: FaqItem[] = [
       'No. SinShield is free to use and does not require an account or cloud profile. It is currently available for Android 11 and newer.',
   },
 ]
+
+const props = defineProps<{
+  title?: string
+  items?: readonly FaqItem[]
+  sectionId?: string
+}>()
+
+const title = computed(() => props.title ?? 'FAQ')
+const items = computed(() => props.items ?? defaultFaqItems)
+const sectionId = computed(() => props.sectionId ?? 'faq')
 </script>
 
 <template>
-  <section id="faq" class="bg-surface py-16 sm:py-20 lg:py-32">
+  <section
+    :id="sectionId"
+    class="bg-surface py-16 sm:py-20 lg:py-32"
+    :aria-labelledby="`${sectionId}-heading`"
+  >
     <BaseContainer>
       <h2
+        :id="`${sectionId}-heading`"
         class="text-center font-display text-[34px] font-extrabold leading-[1.08] tracking-[-0.025em] text-navy sm:text-[44px] lg:text-[56px]"
       >
-        FAQ
+        {{ title }}
       </h2>
 
       <div class="mx-auto mt-12 max-w-4xl border-t border-navy/15 sm:mt-14">
         <details
-          v-for="item in faqItems"
+          v-for="item in items"
           :key="item.question"
           class="group border-b border-navy/15"
         >

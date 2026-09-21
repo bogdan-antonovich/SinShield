@@ -4,7 +4,7 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 const resourceLinks = [
   { label: 'About SinShield', href: '/about' },
   { label: 'Editorial standards', href: '/editorial-standards' },
-  { label: 'SinShield Editorial', href: '/authors/sinshield-editorial' },
+  { label: 'Authors', href: '/authors' },
   { label: 'How it works', href: '/#how-it-works' },
   { label: 'Protection', href: '/#about_protection' },
   { label: 'FAQ', href: '/#faq' },
