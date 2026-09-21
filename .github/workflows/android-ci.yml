@@ -1,0 +1,69 @@
+name: Android CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-cd.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - ".github/workflows/android-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Lint, test, and verify release bundle
+        run: ./gradlew --no-daemon lintRelease testDebugUnitTest bundleRelease
+
+      - name: Upload failure reports
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ci-reports-${{ github.sha }}
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,280 @@
+name: Android CD
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: sinshield-android-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Release quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Lint and test
+        run: ./gradlew --no-daemon lintRelease testDebugUnitTest
+
+  publish:
+    name: Build and publish signed release
+    needs: quality-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production-android
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Derive release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v([0-9]{1,4})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH with numeric components." >&2
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+
+          if (( 10#$minor > 999 || 10#$patch > 999 )); then
+            echo "Minor and patch versions must be at most 999." >&2
+            exit 1
+          fi
+
+          version="${major}.${minor}.${patch}"
+          version_code=$((10#$major * 1000000 + 10#$minor * 1000 + 10#$patch))
+
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "Derived Android versionCode is outside the supported range." >&2
+            exit 1
+          fi
+
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASES_ACCESS_TOKEN: ${{ secrets.RELEASES_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          for name in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD \
+            RELEASES_ACCESS_TOKEN
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "Required secret $name is empty." >&2
+              exit 1
+            fi
+          done
+
+          if [[ ! "$RELEASES_ACCESS_TOKEN" =~ ^[A-Za-z0-9_-]{32,128}$ ]]; then
+            echo "RELEASES_ACCESS_TOKEN must contain 32-128 URL-safe characters." >&2
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Decode release keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          keystore_path="$RUNNER_TEMP/sinshield-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 0600 "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Build signed AAB and APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon \
+            -PreleaseVersionName=${{ steps.version.outputs.version }} \
+            -PreleaseVersionCode=${{ steps.version.outputs.version_code }} \
+            bundleRelease assembleRelease
+
+      - name: Verify signed packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bundle_verification="$(jarsigner -verify app/build/outputs/bundle/release/app-release.aab 2>&1)"
+          printf '%s\n' "$bundle_verification"
+          if ! grep -q '^jar verified' <<< "$bundle_verification"; then
+            echo "The release app bundle does not contain a valid JAR signature." >&2
+            exit 1
+          fi
+
+          build_tools="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if [ -z "$build_tools" ] || [ ! -x "$build_tools/apksigner" ]; then
+            echo "Unable to locate apksigner in the Android SDK." >&2
+            exit 1
+          fi
+          "$build_tools/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+
+      - name: Prepare release files
+        id: files
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          set -euo pipefail
+
+          release_dir="release/$TAG"
+          aab_name="sinshield-$TAG.aab"
+          apk_name="sinshield-$TAG.apk"
+          mkdir -p "$release_dir"
+
+          install -m 0644 app/build/outputs/bundle/release/app-release.aab "$release_dir/$aab_name"
+          install -m 0644 app/build/outputs/apk/release/app-release.apk "$release_dir/$apk_name"
+
+          (
+            cd "$release_dir"
+            sha256sum "$aab_name" > "$aab_name.sha256"
+            sha256sum "$apk_name" > "$apk_name.sha256"
+          )
+
+          aab_sha256="$(cut -d ' ' -f 1 "$release_dir/$aab_name.sha256")"
+          apk_sha256="$(cut -d ' ' -f 1 "$release_dir/$apk_name.sha256")"
+          aab_size="$(stat -c '%s' "$release_dir/$aab_name")"
+          apk_size="$(stat -c '%s' "$release_dir/$apk_name")"
+
+          jq -n \
+            --arg tag "$TAG" \
+            --arg version "$VERSION" \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg commit "$GITHUB_SHA" \
+            --arg publishedAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --arg aabUrl "https://releases.sinshield.app/$TAG/$aab_name" \
+            --arg aabSha256 "$aab_sha256" \
+            --argjson aabSize "$aab_size" \
+            --arg apkUrl "https://releases.sinshield.app/$TAG/$apk_name" \
+            --arg apkSha256 "$apk_sha256" \
+            --argjson apkSize "$apk_size" \
+            '{
+              tag: $tag,
+              version: $version,
+              versionCode: $versionCode,
+              commit: $commit,
+              publishedAt: $publishedAt,
+              artifacts: {
+                aab: {url: $aabUrl, sha256: $aabSha256, size: $aabSize},
+                apk: {url: $apkUrl, sha256: $apkSha256, size: $apkSize}
+              }
+            }' > "$release_dir/release.json"
+
+      - name: Copy release to VPS staging
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: release/${{ steps.version.outputs.tag }}
+          target: ~/sinshield-releases/incoming/
+          strip_components: 1
+
+      - name: Publish release atomically
+        uses: appleboy/ssh-action@v1
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASES_ACCESS_TOKEN: ${{ secrets.RELEASES_ACCESS_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: RELEASE_TAG,RELEASES_ACCESS_TOKEN
+          script: |
+            set -eu
+            printf '%s\n' "$RELEASES_ACCESS_TOKEN" \
+              | sudo /usr/local/sbin/sinshield-release-publish "$RELEASE_TAG"
+
+      - name: Verify authenticated release endpoint
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASES_ACCESS_TOKEN: ${{ secrets.RELEASES_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          unauthenticated_status="$(curl \
+            --silent \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            https://releases.sinshield.app/latest.json)"
+          if [ "$unauthenticated_status" != "404" ]; then
+            echo "Expected an unauthenticated 404, got $unauthenticated_status." >&2
+            exit 1
+          fi
+
+          published_tag="$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --header "Authorization: Bearer $RELEASES_ACCESS_TOKEN" \
+            https://releases.sinshield.app/latest.json \
+            | jq -r '.tag')"
+          if [ "$published_tag" != "$RELEASE_TAG" ]; then
+            echo "Expected latest release $RELEASE_TAG, got $published_tag." >&2
+            exit 1
+          fi
+
+      - name: Remove temporary keystore
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_PATH:-}" ] && [ -f "$ANDROID_KEYSTORE_PATH" ]; then
+            shred --remove "$ANDROID_KEYSTORE_PATH"
+          fi

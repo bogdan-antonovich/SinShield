@@ -9,7 +9,7 @@ const app = createApp(App)
 
 app.use(router)
 
-// Keep the prerendered page in place until the initial lazy route is ready.
-// Otherwise the layout briefly contains only the header and footer, and the
-// route content pushes the footer out of the viewport when it arrives.
+// Built pages contain simplified crawlable markup. index.html hides that
+// fallback only when JavaScript is available; mounting reveals the real page
+// atomically because Vue adds data-v-app to the container during mount.
 router.isReady().then(() => app.mount('#app'))

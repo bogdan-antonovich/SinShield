@@ -269,8 +269,8 @@ function blogBody() {
   return `
     <main>
       <header>
-        <h1>Practical guidance for healthier digital habits</h1>
-        <p>Evidence-aware, judgment-free articles about adult-content blocking, focus, and making a clear decision easier to keep when a difficult moment arrives.</p>
+        <h1>Everything You Need to Know About Porn and How to Block It</h1>
+        <p>From porn on social media and adult-site laws to accountability apps and the effects of quitting, the SinShield blog gives you clear answers to the questions that matter when you are trying to stop watching porn.</p>
       </header>
       <section>
         <p>Featured article</p>

@@ -2,6 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
+    <style>
+      /*
+       * Built pages include crawlable fallback markup inside #app. Hide that
+       * simplified markup when JavaScript is available so it cannot flash
+       * before Vue replaces it with the fully styled page.
+       */
+      html.js #app:not([data-v-app]) {
+        visibility: hidden;
+      }
+    </style>
+    <script>
+      document.documentElement.classList.add('js')
+    </script>
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/src/assets/fonts/Switzer-Variable.woff2" as="font" type="font/woff2" crossorigin>
