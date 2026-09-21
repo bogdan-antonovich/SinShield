@@ -80,7 +80,9 @@ Before bootstrap:
 1. Point the `A` and, if used, `AAAA` records for `releases.sinshield.app` to the VPS.
 2. Ensure ports 80 and 443 reach host Nginx.
 3. Install Nginx, Certbot, curl, and OpenSSL.
-4. Copy `infra/releases` to the VPS, for example at `~/sinshield-releases-infra`.
+4. Start the Android CD workflow once. It automatically syncs `infra/releases` from the tagged
+   repository state to `~/sinshield-releases-infra` and then stops with a bootstrap instruction
+   when the trusted publisher is not installed yet.
 
 Run bootstrap from that copied directory:
 
@@ -95,6 +97,11 @@ The script installs a root-owned publisher and grants the deployment user passwo
 only to that publisher. It does not grant general passwordless sudo. The initial random token denies
 all access; the first successful tagged deployment replaces it with `RELEASES_ACCESS_TOKEN`. A
 Certbot deploy hook validates and reloads Nginx after future certificate renewals.
+
+Every later deployment refreshes the unprivileged infrastructure copy automatically. If the
+root-owned publisher differs from the tagged repository copy, deployment stops and asks an
+administrator to rerun bootstrap. Repository-controlled files are never executed as root
+automatically.
 
 ## Publishing
 

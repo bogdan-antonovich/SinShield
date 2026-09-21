@@ -216,6 +216,17 @@ jobs:
               }
             }' > "$release_dir/release.json"
 
+      - name: Sync release infrastructure to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: infra/releases
+          target: ~/sinshield-releases-infra/
+          strip_components: 2
+          overwrite: true
+
       - name: Copy release to VPS staging
         uses: appleboy/scp-action@v1
         with:
@@ -238,8 +249,25 @@ jobs:
           envs: RELEASE_TAG,RELEASES_ACCESS_TOKEN
           script: |
             set -eu
+            publisher=/usr/local/sbin/sinshield-release-publish
+            synced_publisher="$HOME/sinshield-releases-infra/scripts/sinshield-release-publish"
+
+            if [ ! -x "$publisher" ]; then
+              echo "The release infrastructure was synced, but the trusted publisher is not installed." >&2
+              echo "Run the following once while logged into the VPS, then rerun this job:" >&2
+              echo "  cd ~/sinshield-releases-infra" >&2
+              echo "  sudo CERTBOT_EMAIL=admin@sinshield.app DEPLOY_USER=\$(whoami) ./scripts/bootstrap-host.sh" >&2
+              exit 1
+            fi
+
+            if ! cmp --silent "$synced_publisher" "$publisher"; then
+              echo "The installed release publisher is older than the repository copy." >&2
+              echo "Rerun ~/sinshield-releases-infra/scripts/bootstrap-host.sh with sudo, then rerun this job." >&2
+              exit 1
+            fi
+
             printf '%s\n' "$RELEASES_ACCESS_TOKEN" \
-              | sudo /usr/local/sbin/sinshield-release-publish "$RELEASE_TAG"
+              | sudo "$publisher" "$RELEASE_TAG"
 
       - name: Verify authenticated release endpoint
         shell: bash
