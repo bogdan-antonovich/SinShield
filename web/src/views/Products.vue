@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { usePageMetadata } from '@/common/composables/usePageMetadata'
-import BaseButton from '@/common/components/BaseButton.vue'
-import BaseContainer from '@/common/components/BaseContainer.vue'
+// import BaseButton from '@/common/components/BaseButton.vue'
+// import BaseContainer from '@/common/components/BaseContainer.vue'
 import HeroSection from '@/modules/products/components/HeroSection.vue'
 import StepsSection from '@/modules/products/components/StepsSection.vue';
 
-const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=app.sinshield'
+// const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=app.sinshield'
 
 defineOptions({ name: 'ProductsView' })
 
