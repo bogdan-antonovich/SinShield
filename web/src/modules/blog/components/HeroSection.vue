@@ -65,7 +65,7 @@ const breadcrumbs = [
             </ul>
 
             <BaseButton :to="getArticlePath(article)" class="mt-10 sm:mt-12">
-              Read more
+              Read {{ article.title }}
             </BaseButton>
           </div>
 

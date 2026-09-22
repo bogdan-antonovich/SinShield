@@ -285,7 +285,7 @@ function blogBody() {
         <p>Featured article</p>
         <h2><a href="${articlePath(featured)}">${escapeHtml(featured.title)}</a></h2>
         <p><a href="/authors/sinshield-editorial">${escapeHtml(featured.author)}</a> · <time datetime="${featured.publishedAt}">${escapeHtml(featured.publishedAt)}</time></p>
-        <a href="${articlePath(featured)}">Read more</a>
+        <a href="${articlePath(featured)}">Read ${escapeHtml(featured.title)}</a>
         <a href="${articlePath(featured)}"><img src="${escapeHtml(featured.thumbnail)}" alt="${escapeHtml(featured.thumbnailAlt)}"></a>
       </section>
       <section>
@@ -936,7 +936,7 @@ ${sitemapEntries.map(({ pathName, lastmod }) => `  <url><loc>${escapeHtml(`${sit
 await writeFile(path.join(distDirectory, 'sitemap.xml'), sitemap)
 await writeFile(
   path.join(distDirectory, 'robots.txt'),
-  `User-agent: *\nAllow: /\n\nSitemap: ${siteOrigin}/sitemap.xml\nAgentmap: ${ardManifestUrl}\n`,
+  `User-agent: *\nAllow: /\n\nSitemap: ${siteOrigin}/sitemap.xml\n`,
 )
 
 const marketingPageByPath = new Map(marketingPages.map((page) => [page.pathName, page]))
