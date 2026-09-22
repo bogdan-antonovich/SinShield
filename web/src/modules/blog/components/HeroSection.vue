@@ -27,10 +27,10 @@ const breadcrumbs = [
 
         <header class="flex flex-col items-center">
           <h1 class="mb-6 max-w-248.75 text-center text-[clamp(2.1rem,9.5vw,3rem)] font-extrabold leading-[1.08] tracking-[-0.025em] text-white sm:text-[44px] md:text-[56px] lg:mb-8 lg:text-[4rem]">
-            Everything You Need to Know About Porn and How to Block It
+            The SinShield Blog
           </h1>
           <p class="max-w-236.75 text-center text-[17px] font-normal leading-[1.5] text-white/85 sm:text-xl md:text-2xl">
-            From porn on social media and adult-site laws to accountability apps and the effects of quitting, the SinShield blog gives you clear answers to the questions that matter when you are trying to stop watching porn.
+            If you are trying to keep porn out of your life, you probably have questions about what works and what does not. We answer them honestly, so you can make a plan that fits your life and holds up when the moment gets difficult.
           </p>
         </header>
       </BaseContainer>

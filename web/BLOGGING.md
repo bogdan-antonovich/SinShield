@@ -61,4 +61,4 @@ Before publishing, verify the production build:
 npm run build
 ```
 
-Commit and push the new Markdown file and its image through the normal website deployment workflow. The build includes the article in the blog library, its own page, prerendered metadata, and the sitemap automatically.
+Commit and push the new Markdown file and its image through the normal website deployment workflow. The build includes the article in the blog library, its own page, prerendered metadata, `sitemap.xml`, and `llms.txt` automatically.

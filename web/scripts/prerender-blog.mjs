@@ -29,7 +29,9 @@ function escapeHtml(value) {
 }
 
 function absoluteUrl(value) {
-  return value.startsWith('http') ? value : `${siteOrigin}${value.startsWith('/') ? '' : '/'}${value}`
+  return value.startsWith('http') || value.startsWith('mailto:')
+    ? value
+    : `${siteOrigin}${value.startsWith('/') ? '' : '/'}${value}`
 }
 
 function withoutPageMetadata(document) {
@@ -853,10 +855,11 @@ for (const page of marketingPages) {
 }
 
 const featuredArticle = articles[0]
+const blogDescription =
+  'Evidence-aware, judgment-free guides to adult-content blocking, digital habits, focus, and recovery from the SinShield editorial team.'
 const blogDocument = createDocument({
   title: 'Blog | SinShield',
-  description:
-    'Evidence-aware, judgment-free guides to adult-content blocking, digital habits, focus, and recovery from the SinShield editorial team.',
+  description: blogDescription,
   pathName: '/blog',
   image: featuredArticle.thumbnail,
   structuredData: [
@@ -928,3 +931,86 @@ await writeFile(
   path.join(distDirectory, 'robots.txt'),
   `User-agent: *\nAllow: /\n\nSitemap: ${siteOrigin}/sitemap.xml\n`,
 )
+
+const marketingPageByPath = new Map(marketingPages.map((page) => [page.pathName, page]))
+
+function llmsPage(pathName, label) {
+  const page = marketingPageByPath.get(pathName)
+  if (!page) throw new Error(`Cannot generate llms.txt: missing page metadata for ${pathName}`)
+  return { label, pathName, description: page.description }
+}
+
+function llmsLink({ label, pathName, description }) {
+  return `- [${label}](${absoluteUrl(pathName)}): ${description}`
+}
+
+const llmsSections = [
+  {
+    heading: 'Product',
+    entries: [
+      llmsPage('/', 'SinShield home'),
+      llmsPage('/products', 'Products'),
+      llmsPage('/products/android', 'SinShield for Android'),
+    ],
+  },
+  {
+    heading: 'About and editorial trust',
+    entries: [
+      llmsPage('/about', 'About SinShield'),
+      llmsPage('/editorial-standards', 'Editorial standards'),
+      llmsPage('/authors', 'Authors'),
+      llmsPage('/authors/sinshield-editorial', 'SinShield Editorial'),
+    ],
+  },
+  {
+    heading: 'Guides and research',
+    entries: [
+      { label: 'SinShield blog', pathName: '/blog', description: blogDescription },
+      ...articles.map((article) => ({
+        label: article.title,
+        pathName: articlePath(article),
+        description: article.description,
+      })),
+    ],
+  },
+  {
+    heading: 'Policies and contact',
+    entries: [
+      {
+        label: 'Privacy policy',
+        pathName: '/privacy-policy',
+        description: 'How SinShield handles data and protects user privacy.',
+      },
+      {
+        label: 'Terms and conditions',
+        pathName: '/terms-and-conditions',
+        description: 'Terms governing use of SinShield.',
+      },
+      {
+        label: 'Sitemap',
+        pathName: '/sitemap.xml',
+        description: 'Index of public, canonical pages.',
+      },
+      {
+        label: 'Support',
+        pathName: `mailto:${SUPPORT_EMAIL}`,
+        description: 'Contact the SinShield team.',
+      },
+    ],
+  },
+]
+
+const llms = `# SinShield
+
+> SinShield is a free, private adult-content blocker for Android. It analyzes supported app screens on the device and can block known adult websites through local DNS filtering, without requiring an account or uploading browsing activity to SinShield.
+
+${llmsSections
+  .map(
+    ({ heading, entries }) => `## ${heading}
+
+${entries.map(llmsLink).join('\n')}`,
+  )
+  .join('\n\n')}
+`
+
+await writeFile(path.join(distDirectory, 'llms.txt'), llms)
