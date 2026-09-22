@@ -5,7 +5,7 @@ description: "Learn how to quit porn by mapping your triggers, changing access, 
 author: "SinShield Editorial"
 publishedAt: 2026-09-22
 readingTime: "11 min read"
-thumbnail: "/images/iquit.jpg"
+thumbnail: "/images/plan.jpg"
 thumbnailAlt: "A phone resting on a calm desk, representing a deliberate change in digital habits"
 tags: ["Recovery", "Digital habits", "Porn blocking"]
 ---

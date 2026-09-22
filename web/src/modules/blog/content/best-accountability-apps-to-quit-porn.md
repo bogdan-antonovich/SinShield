@@ -5,9 +5,10 @@ description: "Compare nine accountability and blocking apps for quitting porn, i
 author: "SinShield Editorial"
 publishedAt: 2026-09-14
 readingTime: "12 min read"
-thumbnail: "/images/iquit.jpg"
+thumbnail: "/images/accountability.jpg"
 thumbnailAlt: "A phone resting on a calm desk, representing private on-device accountability"
 tags: ["Accountability","Recovery","App comparison"]
+featured: true
 ---
 
 If you are reading this, you probably do not need to be convinced that porn is costing you something, because most men who end up here already know exactly what it is taking from them, whether that is time that quietly disappears, focus that never fully comes back, or the growing distance between the person they mean to be and the choices they actually make late at night. The real difficulty was never a lack of understanding, it is that the decision to stop gets made with a clear head while the decision to give in gets made in a moment when your head is anything but clear.

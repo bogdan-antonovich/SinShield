@@ -6,6 +6,7 @@ import BaseButton from '@/common/components/BaseButton.vue'
 import BaseContainer from '@/common/components/BaseContainer.vue'
 import { usePageMetadata } from '@/common/composables/usePageMetadata'
 import TheBreadCrumbs from '@/layouts/components/TheBreadCrumbs.vue'
+import ArticleCard from '@/modules/blog/components/ArticleCard.vue'
 import RichText from '@/modules/blog/components/RichText.vue'
 import TableOfContents, {
   type TocEntry,
@@ -263,15 +264,12 @@ usePageMetadata(() => {
 
       <section v-if="relatedArticles.length" class="mx-auto mt-16 max-w-5xl border-t border-navy/10 pt-12" aria-labelledby="related-reading-heading">
         <h2 id="related-reading-heading" class="font-display text-3xl font-extrabold tracking-[-0.03em] text-navy">Related reading</h2>
-        <div class="mt-7 grid gap-5 sm:grid-cols-3">
-          <RouterLink
+        <div class="mt-7 grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3 lg:gap-y-20">
+          <ArticleCard
             v-for="related in relatedArticles"
             :key="related.slug"
-            :to="getArticlePath(related)"
-            class="rounded-2xl bg-white p-6 font-display text-lg font-bold leading-snug text-navy ring-1 ring-navy/8 transition hover:-translate-y-1 hover:text-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/35 motion-reduce:transition-none"
-          >
-            {{ related.title }}
-          </RouterLink>
+            :article="related"
+          />
         </div>
       </section>
     </BaseContainer>

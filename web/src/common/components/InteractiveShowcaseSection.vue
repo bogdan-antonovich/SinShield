@@ -105,7 +105,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
             />
           </div>
 
-          <div class="max-w-xl lg:mt-8 lg:min-h-64 xl:min-h-56">
+          <div class="mt-8 max-w-xl lg:min-h-64 xl:min-h-56">
             <h3
               class="font-display text-2xl font-bold tracking-[-0.02em]"
               :class="theme === 'dark' ? 'text-white' : 'text-navy'"

@@ -13,12 +13,19 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <nav :style="{ color }" aria-label="Breadcrumb">
-    <ol class="flex flex-wrap items-center gap-2 font-display text-sm font-semibold sm:text-base">
-      <li v-for="(item, index) in items" :key="item.label" class="flex items-center gap-2">
+  <nav class="min-w-0" :style="{ color }" aria-label="Breadcrumb">
+    <ol
+      class="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap font-display text-sm font-semibold sm:text-base"
+    >
+      <li
+        v-for="(item, index) in items"
+        :key="item.label"
+        class="flex items-center gap-2"
+        :class="index === items.length - 1 ? 'min-w-0 flex-1' : 'shrink-0'"
+      >
         <svg
           v-if="index > 0"
-          class="size-4 opacity-45"
+          class="size-4 shrink-0 opacity-45"
           viewBox="0 0 20 20"
           fill="none"
           aria-hidden="true"
@@ -39,7 +46,7 @@ withDefaults(defineProps<{
         >
           {{ item.label }}
         </RouterLink>
-        <span v-else aria-current="page">{{ item.label }}</span>
+        <span v-else class="block min-w-0 truncate" aria-current="page">{{ item.label }}</span>
       </li>
     </ol>
   </nav>

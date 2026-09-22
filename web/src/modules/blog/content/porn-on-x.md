@@ -8,7 +8,6 @@ readingTime: "10 min read"
 thumbnail: "/images/socialmedia.jpg"
 thumbnailAlt: "A phone with a blurred social feed beside a small paper shield"
 tags: ["Social media","Digital habits","Porn blocking"]
-featured: true
 ---
 
 If you searched for porn on X because something explicit appeared in your feed, or because X has quietly become one of the places you go when an urge takes over, the short answer is yes: porn is allowed on X, formerly Twitter, as long as it is consensually produced, properly labeled, and kept out of the platform's most visible spaces. That makes X very different from social networks that ban adult content outright, because the problem is not only that moderation occasionally misses something, it is that a great deal of the content you are trying not to see is permitted to be there in the first place.

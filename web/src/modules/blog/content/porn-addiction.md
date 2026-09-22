@@ -5,7 +5,7 @@ description: "Understand what porn addiction means, which signs point to problem
 author: "SinShield Editorial"
 publishedAt: 2026-09-22
 readingTime: "11 min read"
-thumbnail: "/images/iquit.jpg"
+thumbnail: "/images/addiction.jpg"
 thumbnailAlt: "A phone resting on a calm desk, representing a private digital habit brought back under control"
 tags: ["Recovery", "Mental health", "Digital habits"]
 ---
