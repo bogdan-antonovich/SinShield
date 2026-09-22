@@ -17,7 +17,14 @@ const articles = parseArticleCollection(
     ),
   ),
 )
-const baseDocument = await readFile(path.join(distDirectory, 'index.html'), 'utf8')
+const ardManifestUrl = `${siteOrigin}/.well-known/ard.json`
+const legacyAiCatalogUrl = `${siteOrigin}/.well-known/ai-catalog.json`
+const discoveryLinks = `<link rel="ard" href="${ardManifestUrl}">
+    <link rel="ai-catalog" href="${legacyAiCatalogUrl}">`
+const baseDocument = (await readFile(path.join(distDirectory, 'index.html'), 'utf8')).replace(
+  '</head>',
+  `    ${discoveryLinks}\n  </head>`,
+)
 
 function escapeHtml(value) {
   return String(value)
@@ -929,7 +936,7 @@ ${sitemapEntries.map(({ pathName, lastmod }) => `  <url><loc>${escapeHtml(`${sit
 await writeFile(path.join(distDirectory, 'sitemap.xml'), sitemap)
 await writeFile(
   path.join(distDirectory, 'robots.txt'),
-  `User-agent: *\nAllow: /\n\nSitemap: ${siteOrigin}/sitemap.xml\n`,
+  `User-agent: *\nAllow: /\n\nSitemap: ${siteOrigin}/sitemap.xml\nAgentmap: ${ardManifestUrl}\n`,
 )
 
 const marketingPageByPath = new Map(marketingPages.map((page) => [page.pathName, page]))
@@ -1014,3 +1021,38 @@ ${entries.map(llmsLink).join('\n')}`,
 `
 
 await writeFile(path.join(distDirectory, 'llms.txt'), llms)
+
+const ardManifest = {
+  specVersion: '1.0',
+  host: {
+    displayName: 'SinShield',
+    identifier: 'sinshield.app',
+    documentationUrl: `${siteOrigin}/llms.txt`,
+  },
+  entries: [
+    {
+      identifier: 'urn:air:sinshield.app:document:llms-txt',
+      displayName: 'SinShield AI-readable site index',
+      type: 'text/plain',
+      url: `${siteOrigin}/llms.txt`,
+      description:
+        'A concise, machine-readable index of SinShield product information, editorial guidance, policies, and public resources.',
+      tags: ['android', 'adult-content-blocker', 'digital-wellbeing', 'privacy'],
+      capabilities: ['ProductInformation', 'EditorialGuidance', 'PolicyReference'],
+      representativeQueries: [
+        'How does SinShield block adult content on Android?',
+        'What privacy protections does SinShield provide?',
+        'Where can I find SinShield guides and policies?',
+      ],
+    },
+  ],
+}
+const serializedArdManifest = `${JSON.stringify(ardManifest, null, 2)}\n`
+const wellKnownDirectory = path.join(distDirectory, '.well-known')
+
+await mkdir(wellKnownDirectory, { recursive: true })
+await Promise.all([
+  writeFile(path.join(wellKnownDirectory, 'ard.json'), serializedArdManifest),
+  writeFile(path.join(wellKnownDirectory, 'ai-catalog.json'), serializedArdManifest),
+  writeFile(path.join(distDirectory, 'ai-catalog.json'), serializedArdManifest),
+])

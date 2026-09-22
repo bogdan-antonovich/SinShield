@@ -29,6 +29,14 @@ export default {
     if (staticPageResponse.status !== 404) return secure(staticPageResponse)
 
     url.pathname = '/'
-    return secure(await env.ASSETS.fetch(new Request(url, request)))
+    const appShellResponse = await env.ASSETS.fetch(new Request(url, request))
+
+    return secure(
+      new Response(appShellResponse.body, {
+        status: 404,
+        statusText: 'Not Found',
+        headers: appShellResponse.headers,
+      }),
+    )
   },
 }

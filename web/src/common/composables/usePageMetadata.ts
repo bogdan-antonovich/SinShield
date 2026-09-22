@@ -5,6 +5,7 @@ interface PageMetadata {
   title: string
   description: string
   path: string
+  robots?: string
   image?: string
   type?: 'website' | 'article'
   publishedAt?: string
@@ -12,7 +13,10 @@ interface PageMetadata {
   author?: string
 }
 
-const productionOrigin = (import.meta.env.VITE_SITE_URL || 'https://sinshield.app').replace(/\/$/, '')
+const productionOrigin = (import.meta.env.VITE_SITE_URL || 'https://sinshield.app').replace(
+  /\/$/,
+  '',
+)
 
 function upsertMeta(attribute: 'name' | 'property', key: string, content: string) {
   let element = document.head.querySelector<HTMLMetaElement>(`meta[${attribute}="${key}"]`)
@@ -31,7 +35,9 @@ function removeMeta(attribute: 'name' | 'property', key: string) {
 }
 
 function toAbsoluteUrl(value: string): string {
-  return value.startsWith('http') ? value : `${productionOrigin}${value.startsWith('/') ? '' : '/'}${value}`
+  return value.startsWith('http')
+    ? value
+    : `${productionOrigin}${value.startsWith('/') ? '' : '/'}${value}`
 }
 
 export function usePageMetadata(metadata: MaybeRefOrGetter<PageMetadata>) {
@@ -41,6 +47,13 @@ export function usePageMetadata(metadata: MaybeRefOrGetter<PageMetadata>) {
 
     document.title = value.title
     upsertMeta('name', 'description', value.description)
+
+    if (value.robots) {
+      upsertMeta('name', 'robots', value.robots)
+    } else {
+      removeMeta('name', 'robots')
+    }
+
     upsertMeta('property', 'og:title', value.title)
     upsertMeta('property', 'og:description', value.description)
     upsertMeta('property', 'og:type', value.type ?? 'website')
