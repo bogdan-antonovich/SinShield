@@ -1,6 +1,6 @@
 ---
 slug: porn-addiction
-title: "Understanding porn addiction: Signs, Causes, and When to Get Help"
+title: "Porn Addiction: When Watching Feels Out of Control"
 description: "Understand what porn addiction means, which signs point to problematic use, how clinicians assess it, and what treatment and self-help can realistically do."
 author: "SinShield Editorial"
 publishedAt: 2026-09-22
