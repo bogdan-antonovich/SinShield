@@ -7,6 +7,8 @@
     <string name="accessibility_disclosure_cancel">Not now</string>
     <string name="privacy_policy_link">Privacy Policy</string>
     <string name="privacy_policy_url" translatable="false">https://sinshield.app/privacy-policy</string>
+    <string name="terms_and_conditions_link">Terms &amp; Conditions</string>
+    <string name="terms_and_conditions_url" translatable="false">https://sinshield.app/terms-and-conditions</string>
     <string name="brand_sin">Sin</string>
     <string name="brand_shield">Shield.</string>
     <string name="brand_wordmark">SinShield.</string>

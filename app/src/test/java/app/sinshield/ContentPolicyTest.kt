@@ -37,6 +37,15 @@ class ContentPolicyTest {
     }
 
     @Test
+    fun balancedModePreservesOriginalSettingsAndOtherModesStayClose() {
+        assertEquals(DetectionThresholds(), ProtectionLevel.BALANCED.thresholds)
+        assertTrue(ProtectionLevel.STRICT.thresholds.explicit < ProtectionLevel.BALANCED.thresholds.explicit)
+        assertTrue(ProtectionLevel.STRICT.thresholds.semiNude < ProtectionLevel.BALANCED.thresholds.semiNude)
+        assertTrue(ProtectionLevel.RELAXED.thresholds.explicit > ProtectionLevel.BALANCED.thresholds.explicit)
+        assertTrue(ProtectionLevel.RELAXED.thresholds.semiNude > ProtectionLevel.BALANCED.thresholds.semiNude)
+    }
+
+    @Test
     fun explicitScoreProducesFinalExplicitVerdict() {
         val result = ContentPolicy.evaluate(floatArrayOf(0f, 0.94f, 0.01f, 0.01f, 0.01f))
 
@@ -88,7 +97,7 @@ class ContentPolicyTest {
 
         val result = ContentPolicy.combine(
             safe,
-            localizedExplicitScore = 0.60f,
+            localizedExplicitScore = 0.80f,
             localizedSemiNudeScore = 0.1f,
             thresholds = ProtectionLevel.BALANCED.thresholds
         )

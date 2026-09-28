@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/sinshield_surface"
+    android:clickable="true"
+    android:focusable="true"
+    android:importantForAccessibility="yes"
+    android:paddingHorizontal="32dp"
+    android:paddingVertical="36dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:padding="13dp"
+            android:background="@drawable/bg_preview_bubble_logo"
+            android:contentDescription="SinShield setup guide"
+            android:src="@drawable/ic_setup_guide_robot" />
+
+        <TextView
+            android:id="@+id/preview_block_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:gravity="center"
+            android:textColor="@color/sinshield_navy"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/preview_block_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:textColor="#BF082D48"
+            android:textSize="17sp" />
+
+        <Button
+            android:id="@+id/preview_block_continue"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="32dp"
+            android:background="@drawable/bg_overlay_button_primary"
+            android:backgroundTint="@null"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textStyle="bold" />
+    </LinearLayout>
+</FrameLayout>

@@ -94,6 +94,7 @@ internal object ProtectionHealthMonitor {
     }
 
     fun checkNow(context: Context) {
+        StreakTracker.updateProtection(context, isProtectionOperational(context))
         if (!canNotify(context)) return
         createChannel(context)
         val now = System.currentTimeMillis()
@@ -143,12 +144,6 @@ internal object ProtectionHealthMonitor {
     fun missingRequirements(context: Context): List<String> = buildList {
         if (!isAccessibilityEnabled(context)) add("Accessibility")
         if (!Settings.canDrawOverlays(context)) add("display over other apps")
-        // OEM battery modes such as Xiaomi's “No restrictions” are private settings and do not
-        // necessarily update Android's Doze allowlist. Never report that unobservable OEM control
-        // as disabled; its dedicated setup row explains that it must be checked manually.
-        if (DeviceBackgroundPolicy.current() == null && !isBatteryOptimizationDisabled(context)) {
-            add("unrestricted battery use")
-        }
         DeviceBackgroundPolicy.current()?.let { policy ->
             if (!DeviceBackgroundPolicy.hasVisitedSettings(context, policy)) {
                 add("${policy.displayName} background startup")
@@ -170,6 +165,20 @@ internal object ProtectionHealthMonitor {
     fun isBatteryOptimizationDisabled(context: Context): Boolean =
         context.getSystemService(PowerManager::class.java)
             .isIgnoringBatteryOptimizations(context.packageName)
+
+    fun isProtectionOperational(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+        if (missingRequirements(context).isNotEmpty()) return false
+        val preferences = preferences(context)
+        val accessibilityHeartbeat = preferences.getLong(LAST_ACCESSIBILITY_HEARTBEAT, 0L)
+        val vpnHeartbeat = preferences.getLong(VPN_HEARTBEAT_AT, 0L)
+        val accessibilityHealthy = accessibilityHeartbeat > 0L &&
+            now - accessibilityHeartbeat < STALE_SERVICE_MS
+        val vpnHealthy = isVpnExpected(context) && VpnService.prepare(context) == null &&
+            preferences.getLong(VPN_FAILURE_AT, 0L) == 0L &&
+            (AdultContentVpnService.isRunning ||
+                (vpnHeartbeat > 0L && now - vpnHeartbeat < STALE_SERVICE_MS))
+        return accessibilityHealthy && vpnHealthy
+    }
 
     /**
      * Repairs protection after boot, package replacement, or a watchdog check. Android owns an

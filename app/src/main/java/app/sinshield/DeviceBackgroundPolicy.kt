@@ -1,5 +1,6 @@
 package app.sinshield
 
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -29,7 +30,11 @@ internal enum class DeviceBackgroundPolicy(
         "Oppo",
         listOf(
             "com.coloros.safecenter" to
-                "com.coloros.safecenter.startupapp.StartupAppListActivity"
+                "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+            "com.coloros.safecenter" to
+                "com.coloros.safecenter.startupapp.StartupAppListActivity",
+            "com.oppo.safe" to
+                "com.oppo.safe.permission.startup.StartupAppListActivity"
         )
     ),
     VIVO(
@@ -81,15 +86,37 @@ internal enum class DeviceBackgroundPolicy(
                 .apply()
         }
 
-        fun settingsIntent(context: Context, policy: DeviceBackgroundPolicy): Intent {
-            policy.settingsComponents.forEach { (packageName, className) ->
-                val intent = Intent().setComponent(ComponentName(packageName, className))
-                if (intent.resolveActivity(context.packageManager) != null) return intent
+        fun launchSettings(
+            context: Context,
+            policy: DeviceBackgroundPolicy,
+            launch: (Intent) -> Unit
+        ): Boolean = launchFirstSupported(settingsIntents(context.packageName, policy), launch)
+
+        internal fun settingsIntents(
+            packageName: String,
+            policy: DeviceBackgroundPolicy
+        ): List<Intent> = policy.settingsComponents.map { (settingsPackage, className) ->
+            Intent().setComponent(ComponentName(settingsPackage, className))
+        } + Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:$packageName")
+        )
+
+        internal fun launchFirstSupported(
+            intents: List<Intent>,
+            launch: (Intent) -> Unit
+        ): Boolean {
+            intents.forEach { intent ->
+                try {
+                    launch(intent)
+                    return true
+                } catch (_: ActivityNotFoundException) {
+                    // Manufacturer setting components vary between Android builds.
+                } catch (_: SecurityException) {
+                    // Some builds expose the component but reserve it for system-signed apps.
+                }
             }
-            return Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:${context.packageName}")
-            )
+            return false
         }
     }
 }

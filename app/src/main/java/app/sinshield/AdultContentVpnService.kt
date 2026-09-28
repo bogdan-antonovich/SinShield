@@ -176,17 +176,27 @@ class AdultContentVpnService : VpnService() {
                         ?.takeIf { it.destinationPort == DNS_PORT }
                         ?.let { request ->
                             val queryName = DnsMessageCodec.queryName(request.payload)
-                            val blocked = queryName?.let(matcher::isBlocked) == true
+                            val previewBlock = queryName?.let {
+                                ProtectionPreviewRepository.shouldTemporarilyBlock(this, it)
+                            } == true
+                            val blocked = previewBlock || queryName?.let(matcher::isBlocked) == true
 
                             val dnsResponse = if (blocked) {
-                                DnsMessageCodec.nxdomainResponse(request.payload)
+                                if (previewBlock) {
+                                    // A tutorial block must not leave a negative DNS cache behind.
+                                    // SERVFAIL demonstrates the interruption while allowing a
+                                    // normal lookup immediately after the user continues the preview.
+                                    DnsMessageCodec.serverFailureResponse(request.payload)
+                                } else {
+                                    DnsMessageCodec.nxdomainResponse(request.payload)
+                                }
                             } else {
                                 forward(request.payload)
                             }
 
                             dnsResponse?.let { responsePayload ->
                                 if (blocked) {
-                                    reportBlockedDomain(queryName)
+                                    reportBlockedDomain(queryName, previewBlock)
                                 }
 
                                 val response = Ipv4UdpPacketCodec.response(
@@ -268,33 +278,40 @@ class AdultContentVpnService : VpnService() {
         return DnsMessageCodec.serverFailureResponse(query)
     }
 
-    private fun reportBlockedDomain(domain: String) {
+    private fun reportBlockedDomain(domain: String, preview: Boolean) {
         val now = System.currentTimeMillis()
         // A single page load fires many DNS queries for the same blocked host. Coalesce them so the
         // user sees one overlay/notification per domain per cooldown instead of a burst.
-        synchronized(recentlyReported) {
-            val lastReported = recentlyReported[domain] ?: 0L
-            if (now - lastReported < REPORT_COOLDOWN_MS) return
-            recentlyReported[domain] = now
-            // Cap the map by evicting the oldest entry (LinkedHashMap preserves insertion order),
-            // bounding memory over a long-running session.
-            if (recentlyReported.size > MAX_RECENT_REPORTS) {
-                recentlyReported.entries.iterator().run {
-                    if (hasNext()) {
-                        next()
-                        remove()
+        if (!preview) {
+            synchronized(recentlyReported) {
+                val lastReported = recentlyReported[domain] ?: 0L
+                if (now - lastReported < REPORT_COOLDOWN_MS) return
+                recentlyReported[domain] = now
+                // Cap the map by evicting the oldest entry (LinkedHashMap preserves insertion
+                // order), bounding memory over a long-running session.
+                if (recentlyReported.size > MAX_RECENT_REPORTS) {
+                    recentlyReported.entries.iterator().run {
+                        if (hasNext()) {
+                            next()
+                            remove()
+                        }
                     }
                 }
             }
         }
+        if (preview && !ProtectionPreviewRepository.recordSiteBlocked(this)) return
         sendBroadcast(
             Intent(ACTION_ADULT_DOMAIN_BLOCKED)
                 .setPackage(packageName)
                 .putExtra(EXTRA_DOMAIN, domain)
+                .putExtra(EXTRA_PREVIEW, preview)
         )
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
-            notification(getString(R.string.vpn_notification_blocked))
+            notification(
+                if (preview) "Setup guide blocked the test website"
+                else getString(R.string.vpn_notification_blocked)
+            )
         )
         Log.i(TAG, "Blocked adult-content domain")
     }
@@ -395,6 +412,7 @@ class AdultContentVpnService : VpnService() {
             "com.example.sinshield.action.ADULT_DOMAIN_BLOCKED"
         const val ACTION_STATE_CHANGED = "com.example.sinshield.action.VPN_STATE_CHANGED"
         const val EXTRA_DOMAIN = "domain"
+        const val EXTRA_PREVIEW = "preview"
         const val EXTRA_RUNNING = "running"
         const val EXTRA_ALWAYS_ON = "always_on"
         private const val ACTION_START = "com.example.sinshield.action.START_VPN"

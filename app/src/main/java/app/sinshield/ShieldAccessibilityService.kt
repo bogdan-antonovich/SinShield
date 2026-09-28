@@ -22,8 +22,10 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import java.util.ArrayDeque
+import java.util.concurrent.ExecutorService
 import kotlin.math.max
 import kotlin.math.min
 
@@ -56,6 +58,10 @@ class ShieldAccessibilityService : AccessibilityService() {
     private var receivedEventCount = 0
     private var ignoredEventCount = 0
     private var maxEventTimeMs = 0L
+    private val previewExecutor: ExecutorService =
+        newBackgroundSingleThreadExecutor("SinSheld-Preview")
+    private var previewInspectionGeneration = 0L
+    private var scheduledOverlayGuideStage: ProtectionPreviewStage? = null
 
     private lateinit var recovery: RecoveryController
     private lateinit var scanner: FrameScanner
@@ -90,6 +96,25 @@ class ShieldAccessibilityService : AccessibilityService() {
         override fun onGoBack() = recovery.goBackFromSite()
     }
 
+    private val previewSiteBlockActions = object : OverlayManager.SiteBlockActions {
+        override fun onOpenSafePage() = continueAfterPreviewSiteBlock()
+        override fun onGoBack() = continueAfterPreviewSiteBlock()
+    }
+
+    private val previewAppBlockActions = object : OverlayManager.AppBlockActions {
+        override fun onCooldownStarted() = cancelScheduledScan()
+        override fun onReturnToFeed(app: ShieldedApp) = continueAfterPreviewImageBlock()
+        override fun onPrimaryRecovery(app: ShieldedApp) = continueAfterPreviewImageBlock()
+        override fun onCloseApp(app: ShieldedApp) = continueAfterPreviewImageBlock()
+        override fun onRecoveryVerificationBlocked(app: ShieldedApp) = Unit
+        override fun onDismiss(incident: IncidentId) = continueAfterPreviewImageBlock()
+        override fun onFeedback(
+            incident: IncidentId,
+            disturbing: Boolean,
+            onComplete: (Boolean) -> Unit
+        ) = onComplete(true)
+    }
+
     // Browser packages remain available for DNS-site overlays, but do not enter screenshot
     // monitoring while app protection is intentionally limited to Instagram and X.
     private val monitoredPackages = socialPackages /* + browserPackages */
@@ -100,7 +125,11 @@ class ShieldAccessibilityService : AccessibilityService() {
                 ?.getStringExtra(AdultContentVpnService.EXTRA_DOMAIN)
                 ?.takeIf(String::isNotBlank)
                 ?: return
-            showBlockedSiteOverlay(domain)
+            if (intent.getBooleanExtra(AdultContentVpnService.EXTRA_PREVIEW, false)) {
+                showPreviewSiteOverlay(attempt = 0)
+            } else {
+                showBlockedSiteOverlay(domain)
+            }
         }
     }
 
@@ -232,7 +261,9 @@ class ShieldAccessibilityService : AccessibilityService() {
 
         // Keyboard, System UI, and unrelated apps can generate content-change events many times per
         // second. They cannot affect a protected feed, so do not make a Binder root query for them.
-        if (contentEvent && eventPackage !in monitoredPackages) {
+        if (contentEvent && eventPackage !in monitoredPackages &&
+            !(isPreviewBrowser(eventPackage) && ProtectionPreviewRepository.isBrowserStep(this))
+        ) {
             ignoredEventCount++
             return
         }
@@ -296,6 +327,25 @@ class ShieldAccessibilityService : AccessibilityService() {
                 scanner.clearConfirmation()
                 return
             }
+        }
+
+        if (isSetupGuideSettingsStep(foregroundPackage)) {
+            updateEventSubscription(includeContentEvents = false)
+            cancelScheduledScan()
+            scanner.clearConfirmation()
+            showSettingsGuide()
+            return
+        } else if (isPreviewBrowser(foregroundPackage) &&
+            ProtectionPreviewRepository.isBrowserStep(this)
+        ) {
+            updateEventSubscription(includeContentEvents = true)
+            cancelScheduledScan()
+            scanner.clearConfirmation()
+            showPreviewGuidance()
+            schedulePreviewInspection(foregroundPackage!!)
+            return
+        } else {
+            overlays.clearPreviewInstruction()
         }
 
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
@@ -521,6 +571,263 @@ class ShieldAccessibilityService : AccessibilityService() {
         cancelScheduledScan()
     }
 
+    private fun showPreviewSiteOverlay(attempt: Int) {
+        if (ProtectionPreviewRepository.stage(this) != ProtectionPreviewStage.SITE_EXPLANATION) {
+            return
+        }
+        syncForegroundFromRoot()
+        val browserPackage = foregroundPackage?.takeIf(::isPreviewBrowser) ?: run {
+            if (attempt < PREVIEW_SITE_OVERLAY_MAX_RETRIES) {
+                handler.postDelayed(
+                    { showPreviewSiteOverlay(attempt + 1) },
+                    PREVIEW_SITE_OVERLAY_RETRY_MS
+                )
+            }
+            return
+        }
+        overlays.showSiteBlock(
+            packageName = browserPackage,
+            domain = ProtectionPreviewRepository.TEST_DOMAIN,
+            actions = previewSiteBlockActions
+        )
+        scheduleOverlayGuide(ProtectionPreviewStage.SITE_EXPLANATION) {
+            overlays.showPreviewInstruction(
+                message = "This is the same website protection screen you’ll see when SinShield " +
+                    "blocks an adult-content website. It stops the site before it loads and gives " +
+                    "you a way out.",
+                messageRevealDelayMs = OVERLAY_GUIDE_MESSAGE_DELAY_MS
+            )
+        }
+    }
+
+    private fun continueAfterPreviewSiteBlock() {
+        scheduledOverlayGuideStage = null
+        overlays.clearPreviewInstruction()
+        overlays.clearSiteBlockingOverlay()
+        ProtectionPreviewRepository.moveTo(this, ProtectionPreviewStage.WAITING_CARS_SEARCH)
+        openPreviewBrowserTab("https://www.google.com")
+        Log.i(TAG, "Website setup demonstration completed")
+    }
+
+    private fun openPreviewBrowserTab(url: String? = null) {
+        val intent = if (url == null) {
+            newPreviewBrowserTabIntent(this)
+        } else {
+            newPreviewBrowserUrlIntent(this, url)
+        } ?: run {
+            Toast.makeText(this, "No default browser is configured", Toast.LENGTH_LONG).show()
+            return
+        }
+        ProtectionPreviewRepository.setBrowserPackage(
+            this,
+            intent.component?.packageName
+        )
+        runCatching { startActivity(intent) }
+            .onFailure {
+                Toast.makeText(this, "Unable to open the default browser", Toast.LENGTH_LONG)
+                    .show()
+                return
+            }
+        handler.postDelayed({ showPreviewGuidance() }, 700L)
+    }
+
+    private fun showPreviewGuidance() {
+        when (ProtectionPreviewRepository.stage(this)) {
+            ProtectionPreviewStage.WAITING_SITE_BLOCK -> overlays.showPreviewInstruction(
+                message = "Let’s test website protection. Go to this website in your browser. Tap " +
+                    "copy, then paste it into the address bar, or simply type it there.",
+                domainText = ProtectionPreviewRepository.TEST_URL,
+                onCopyDomain = { ProtectionPreviewRepository.armSiteBlockTest(this) }
+            )
+            ProtectionPreviewStage.WAITING_CARS_SEARCH -> overlays.showPreviewInstruction(
+                message = "Now I’ll show you screen protection. While you browse X or Instagram, " +
+                    "SinShield checks the visible screen on your device. If it detects sexual " +
+                    "content, it covers the screen so the content is no longer visible.\n\n" +
+                    "This next step will show you what that interruption looks like and what you " +
+                    "can do afterward. Search Google for “cars”. Tap copy, then paste it into the " +
+                    "search box.",
+                domainText = "cars",
+                onCopyDomain = {}
+            )
+            ProtectionPreviewStage.WAITING_IMAGES -> overlays.showPreviewInstruction(
+                "Great—now select Images in the Google results."
+            )
+            ProtectionPreviewStage.IMAGE_EXPLANATION ->
+                scheduleOverlayGuide(ProtectionPreviewStage.IMAGE_EXPLANATION) {
+                    showImageProtectionGuide()
+                }
+            else -> overlays.clearPreviewInstruction()
+        }
+    }
+
+    private fun showImageProtectionGuide() {
+        overlays.showPreviewInstruction(
+            message = "This is screen protection. It works while you browse X and Instagram. " +
+                "When SinShield detects sexual content on the display, it covers the whole screen " +
+                "immediately so the content is no longer visible. The five-second pause gives you " +
+                "a moment before the recovery choices appear. You can then return to the feed, " +
+                "move past the content, or close the app.",
+            actionLabel = "Continue",
+            onAction = ::continueAfterPreviewImageBlock,
+            messageRevealDelayMs = SCREEN_PROTECTION_MESSAGE_DELAY_MS
+        )
+    }
+
+    private fun scheduleOverlayGuide(
+        stage: ProtectionPreviewStage,
+        show: () -> Unit
+    ) {
+        if (scheduledOverlayGuideStage == stage) return
+        scheduledOverlayGuideStage = stage
+        overlays.clearPreviewInstruction()
+        handler.postDelayed({
+            if (ProtectionPreviewRepository.stage(this) == stage) show()
+        }, OVERLAY_GUIDE_ROBOT_DELAY_MS)
+    }
+
+    private fun continueAfterPreviewImageBlock() {
+        scheduledOverlayGuideStage = null
+        overlays.clearPreviewInstruction()
+        overlays.removeAppBlockingOverlay()
+        ProtectionPreviewRepository.moveTo(this, ProtectionPreviewStage.TOUR_INTRO)
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        )
+    }
+
+    private fun isSetupGuideSettingsStep(foreground: String?): Boolean {
+        if (foreground != SETTINGS_PACKAGE) return false
+        return when (ProtectionPreviewRepository.stage(this)) {
+            ProtectionPreviewStage.ACCESSIBILITY,
+            ProtectionPreviewStage.OVERLAY,
+            ProtectionPreviewStage.BATTERY -> true
+            else -> false
+        }
+    }
+
+    private fun showSettingsGuide() {
+        val message = when (ProtectionPreviewRepository.stage(this)) {
+            ProtectionPreviewStage.ACCESSIBILITY ->
+                "Accessibility is on—I’m here now. Return to SinShield and I’ll take you to the next setting."
+            ProtectionPreviewStage.OVERLAY ->
+                "Turn on Allow display over other apps for SinShield, then return to the app."
+            ProtectionPreviewStage.BATTERY ->
+                "Choose unrestricted battery or background use for SinShield, then return to the app."
+            else -> return
+        }
+        overlays.showPreviewInstruction(
+            message = message,
+            // The service starts only after Accessibility is enabled. Its first appearance in
+            // Android Settings should therefore use Shieldbot's predictable default corner,
+            // regardless of where the user dragged it during an earlier guide step.
+            useSavedPosition = ProtectionPreviewRepository.stage(this) !=
+                ProtectionPreviewStage.ACCESSIBILITY
+        )
+    }
+
+    private fun isPreviewBrowser(packageName: String?): Boolean =
+        packageName != null && (
+            packageName in browserPackages ||
+                packageName == ProtectionPreviewRepository.browserPackage(this)
+            )
+
+    private fun schedulePreviewInspection(browserPackage: String) {
+        val generation = ++previewInspectionGeneration
+        handler.postDelayed({
+            if (generation != previewInspectionGeneration || foregroundPackage != browserPackage) {
+                return@postDelayed
+            }
+            previewExecutor.execute {
+                val evidence = collectBrowserPageEvidence(browserPackage)
+                handler.post {
+                    if (generation == previewInspectionGeneration &&
+                        foregroundPackage == browserPackage
+                    ) {
+                        applyPreviewEvidence(evidence)
+                    }
+                }
+            }
+        }, PREVIEW_INSPECTION_DELAY_MS)
+    }
+
+    private fun collectBrowserPageEvidence(browserPackage: String): BrowserPageEvidence {
+        val root = rootForPackage(browserPackage) ?: return BrowserPageEvidence(
+            emptyList(), emptyList(), emptyList(), emptyList()
+        )
+        val editable = mutableListOf<String>()
+        val selected = mutableListOf<String>()
+        val addressBars = mutableListOf<String>()
+        val visible = mutableListOf<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited++ < MAX_ACCESSIBILITY_NODES) {
+            val node = queue.removeFirst()
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::addLast)
+            if (!node.isVisibleToUser) continue
+            val values = listOfNotNull(
+                node.text?.toString(),
+                node.contentDescription?.toString()
+            ).map(String::trim).filter(String::isNotBlank)
+            visible += values
+            val className = node.className?.toString().orEmpty().lowercase()
+            if (node.isEditable || "edittext" in className) editable += values
+            if (node.isSelected) selected += values
+            val id = node.viewIdResourceName.orEmpty().lowercase()
+            if (ADDRESS_BAR_ID_HINTS.any(id::contains)) addressBars += values
+        }
+        return BrowserPageEvidence(editable, selected, addressBars, visible)
+    }
+
+    private fun applyPreviewEvidence(evidence: BrowserPageEvidence) {
+        when (ProtectionPreviewRepository.stage(this)) {
+            ProtectionPreviewStage.SITE_EXPLANATION -> {
+                if (PreviewBrowserPageDetector.isAtDomain(
+                        evidence,
+                        ProtectionPreviewRepository.TEST_DOMAIN
+                    ) && overlays.siteOverlay == null
+                ) {
+                    showPreviewSiteOverlay(attempt = 0)
+                }
+            }
+            ProtectionPreviewStage.WAITING_CARS_SEARCH -> {
+                if (GooglePreviewPageDetector.isSearchFor(evidence, "cars")) {
+                    ProtectionPreviewRepository.moveTo(this, ProtectionPreviewStage.WAITING_IMAGES)
+                    showPreviewGuidance()
+                }
+            }
+            ProtectionPreviewStage.WAITING_IMAGES -> {
+                if (GooglePreviewPageDetector.isCarsImages(evidence)) {
+                    ProtectionPreviewRepository.moveTo(
+                        this,
+                        ProtectionPreviewStage.IMAGE_EXPLANATION
+                    )
+                    val activePackage = foregroundPackage ?: return
+                    val demonstrationApp = ShieldedApp.INSTAGRAM.copy(
+                        packageName = activePackage,
+                        displayName = "the app"
+                    )
+                    overlays.showAppBlockingOverlay(
+                        app = demonstrationApp,
+                        incident = IncidentId(
+                            packageName = activePackage,
+                            windowId = foregroundWindowId,
+                            frameHash = SystemClock.elapsedRealtime()
+                        ),
+                        verdict = ContentVerdict.EXPLICIT,
+                        mode = ShieldedScreenMode.FEED,
+                        actions = previewAppBlockActions
+                    )
+                    scheduleOverlayGuide(ProtectionPreviewStage.IMAGE_EXPLANATION) {
+                        showImageProtectionGuide()
+                    }
+                }
+            }
+            else -> Unit
+        }
+    }
+
     private fun collectScreenSignals(app: ShieldedApp): ScreenSignals {
         val root = rootForPackage(app.packageName) ?: return ScreenSignals.EMPTY
         val labels = mutableListOf<String>()
@@ -602,6 +909,7 @@ class ShieldAccessibilityService : AccessibilityService() {
         scanner.cancelScheduledModelRelease()
         clearLocalizedOverlays()
         overlays.clearSiteBlockingOverlay()
+        overlays.clearPreviewOverlays()
         return super.onUnbind(intent)
     }
 
@@ -613,12 +921,18 @@ class ShieldAccessibilityService : AccessibilityService() {
         scanner.cancelScheduledModelRelease()
         clearLocalizedOverlays()
         overlays.clearSiteBlockingOverlay()
+        overlays.clearPreviewOverlays()
         runCatching { unregisterReceiver(blockedDomainReceiver) }
         scanner.shutdown()
+        previewExecutor.shutdownNow()
         super.onDestroy()
     }
 
     companion object {
+        private const val SETTINGS_PACKAGE = "com.android.settings"
+        private const val OVERLAY_GUIDE_ROBOT_DELAY_MS = 1_000L
+        private const val OVERLAY_GUIDE_MESSAGE_DELAY_MS = 1_000L
+        private const val SCREEN_PROTECTION_MESSAGE_DELAY_MS = 4_000L
         const val ACTION_STATE_CHANGED = "com.example.sinshield.action.ACCESSIBILITY_STATE_CHANGED"
         const val EXTRA_CONNECTED = "connected"
         @Volatile var isConnected: Boolean = false
@@ -633,6 +947,9 @@ class ShieldAccessibilityService : AccessibilityService() {
         private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
         private const val EVENT_NOTIFICATION_TIMEOUT_MS = 100L
         private const val EVENT_METRICS_INTERVAL_MS = 30_000L
+        private const val PREVIEW_INSPECTION_DELAY_MS = 700L
+        private const val PREVIEW_SITE_OVERLAY_RETRY_MS = 300L
+        private const val PREVIEW_SITE_OVERLAY_MAX_RETRIES = 10
         private const val MIN_MEDIA_AREA_PERCENT = 4
         private const val MAX_MEDIA_AREA_PERCENT = 90
         private const val MIN_MEDIA_WIDTH_PERCENT = 25
@@ -687,6 +1004,13 @@ class ShieldAccessibilityService : AccessibilityService() {
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
             "com.opera.mini.native"
+        )
+        private val ADDRESS_BAR_ID_HINTS = setOf(
+            "url_bar",
+            "location_bar",
+            "address_bar",
+            "toolbar_url",
+            "search_box"
         )
     }
 

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/preview_bubble_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="top"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:importantForAccessibility="yes">
+
+    <FrameLayout
+        android:id="@+id/preview_bubble_card_wrap"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:id="@+id/preview_bubble_card"
+            android:layout_width="230dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_preview_bubble_card"
+            android:outlineProvider="background"
+            android:clipToOutline="true"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/preview_bubble_message"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="2dp"
+                android:textColor="#CC082D48"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:id="@+id/preview_bubble_domain_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_preview_bubble_domain_chip"
+                android:outlineProvider="background"
+                android:clipToOutline="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="12dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/preview_bubble_domain_text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/sinshield_navy"
+                    android:textStyle="bold"
+                    android:textSize="14sp" />
+
+                <ImageButton
+                    android:id="@+id/preview_bubble_copy"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_copy"
+                    android:scaleType="center"
+                    android:contentDescription="Copy this text" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/preview_bubble_action"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <View
+        android:id="@+id/preview_bubble_tail"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="-4dp"
+        android:rotation="45"
+        android:background="@drawable/bg_preview_bubble_tail" />
+
+    <ImageView
+        android:id="@+id/preview_bubble_logo"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_marginStart="4dp"
+        android:padding="9dp"
+        android:background="@drawable/bg_preview_bubble_logo"
+        android:outlineProvider="background"
+        android:clipToOutline="true"
+        android:src="@drawable/ic_setup_guide_robot"
+        android:scaleType="fitCenter"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="SinShield setup guide" />
+</LinearLayout>

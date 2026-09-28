@@ -1,19 +1,29 @@
 package app.sinshield
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.animation.ValueAnimator
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.media.RingtoneManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Owns every window SinSheld draws and the collections that track them: the post-by-post
@@ -59,6 +69,15 @@ internal class OverlayManager(
     private var cooldownView: View? = null
     private var cooldownGeneration = 0L
     private var siteBlockingOverlay: SiteBlockingOverlay? = null
+    private var previewBlockingView: View? = null
+    val hasPreviewBlock: Boolean
+        get() = previewBlockingView != null
+    private var previewBubbleView: View? = null
+    private var previewBubbleMessage: String? = null
+    private var previewBubbleExpandedWidth = 0
+    private var previewBubbleCollapsed = false
+    private var previewBubbleAnimator: ValueAnimator? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val activeIncidents = mutableSetOf<IncidentId>()
 
     /** Read-only handle so recovery can inspect the current full-screen block without owning it. */
@@ -83,11 +102,14 @@ internal class OverlayManager(
     fun hideForLegacyCapture(): List<View> = buildList {
         addAll(localizedOverlays.map(LocalizedOverlay::view))
         appBlockingOverlay?.view?.let(::add)
+        previewBlockingView?.let(::add)
     }.onEach { it.visibility = View.INVISIBLE }
 
     fun restoreLegacyCaptureOverlays(views: List<View>) {
         views.forEach { view ->
-            if (localizedOverlays.any { it.view === view } || appBlockingOverlay?.view === view) {
+            if (localizedOverlays.any { it.view === view } || appBlockingOverlay?.view === view ||
+                previewBlockingView === view
+            ) {
                 view.visibility = View.VISIBLE
             }
         }
@@ -327,6 +349,305 @@ internal class OverlayManager(
         siteBlockingOverlay = null
         runCatching { windowManager.removeView(overlay.view) }
         Log.i(TAG, "Removed website block for ${overlay.packageName}")
+    }
+
+    /**
+     * Shows the floating SinShield bubble that narrates the next browser step during the preview.
+     * The logo stays pinned near the top-right corner for the whole browser step; tapping it is the
+     * only way to hide or reopen the speech card. When [domainText] and [onCopyDomain] are both
+     * given, the card shows a chip the user
+     * taps to copy the test domain instead of typing it (typing is what triggers autocomplete
+     * prefetch and blocks the domain before the user finishes navigating there).
+     */
+    fun showPreviewInstruction(
+        message: String,
+        domainText: String? = null,
+        onCopyDomain: (() -> Unit)? = null,
+        actionLabel: String? = null,
+        onAction: (() -> Unit)? = null,
+        messageRevealDelayMs: Long = 0L,
+        useSavedPosition: Boolean = true
+    ) {
+        previewBlockingView?.let { return }
+        val existing = previewBubbleView
+        if (existing != null && previewBubbleMessage == message) return
+        playPreviewNotificationSound()
+        if (existing != null) {
+            previewBubbleMessage = message
+            existing.findViewById<TextView>(R.id.preview_bubble_message).text = message
+            configurePreviewBubbleDomain(existing, domainText, onCopyDomain)
+            configurePreviewBubbleAction(existing, actionLabel, onAction)
+            setPreviewBubbleCollapsed(existing, collapsed = false, animate = true)
+            return
+        }
+        previewBubbleMessage = message
+        val view = View.inflate(context, R.layout.layout_preview_bubble, null)
+        view.findViewById<TextView>(R.id.preview_bubble_message).text = message
+        configurePreviewBubbleDomain(view, domainText, onCopyDomain)
+        configurePreviewBubbleAction(view, actionLabel, onAction)
+        installPreviewBubbleGesture(view)
+        val params = previewBubbleLayoutParams(
+            useSavedPosition = useSavedPosition && messageRevealDelayMs == 0L
+        )
+        if (messageRevealDelayMs > 0L) {
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(
+                    context.resources.displayMetrics.widthPixels,
+                    View.MeasureSpec.AT_MOST
+                ),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            previewBubbleExpandedWidth = view.measuredWidth
+            previewBubbleCollapsed = true
+            view.findViewById<View>(R.id.preview_bubble_card_wrap).visibility = View.GONE
+            view.findViewById<View>(R.id.preview_bubble_tail).visibility = View.GONE
+            params.width = dpToPx(PREVIEW_BUBBLE_COLLAPSED_WIDTH_DP)
+            view.translationX = dpToPx(PREVIEW_BUBBLE_ENTRANCE_DISTANCE_DP).toFloat()
+        }
+        if (!addOverlay(view, params)) {
+            previewBubbleMessage = null
+            return
+        }
+        previewBubbleView = view
+        view.post {
+            if (previewBubbleView !== view) return@post
+            if (messageRevealDelayMs > 0L) {
+                view.animate()
+                    .translationX(0f)
+                    .setDuration(PREVIEW_BUBBLE_ENTRANCE_MS)
+                    .start()
+                mainHandler.postDelayed({
+                    if (previewBubbleView !== view) return@postDelayed
+                    setPreviewBubbleCollapsed(view, collapsed = false, animate = true)
+                }, messageRevealDelayMs)
+            } else {
+                previewBubbleExpandedWidth = view.width
+            }
+        }
+    }
+
+    private fun playPreviewNotificationSound() {
+        runCatching {
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            RingtoneManager.getRingtone(context, soundUri)?.play()
+        }
+    }
+
+    private fun configurePreviewBubbleDomain(
+        view: View,
+        domainText: String?,
+        onCopyDomain: (() -> Unit)?
+    ) {
+        val row = view.findViewById<View>(R.id.preview_bubble_domain_row)
+        val copyButton = view.findViewById<ImageButton>(R.id.preview_bubble_copy)
+        if (domainText == null || onCopyDomain == null) {
+            row.visibility = View.GONE
+            row.setOnClickListener(null)
+            copyButton.setOnClickListener(null)
+            return
+        }
+        view.findViewById<TextView>(R.id.preview_bubble_domain_text).text = domainText
+        row.visibility = View.VISIBLE
+        val copy = {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            clipboard.setPrimaryClip(ClipData.newPlainText("SinShield setup guide", domainText))
+            Toast.makeText(context, "Copied — paste it in your browser", Toast.LENGTH_SHORT).show()
+            onCopyDomain()
+        }
+        row.setOnClickListener { copy() }
+        copyButton.setOnClickListener { copy() }
+    }
+
+    private fun configurePreviewBubbleAction(
+        view: View,
+        label: String?,
+        onAction: (() -> Unit)?
+    ) {
+        view.findViewById<Button>(R.id.preview_bubble_action).apply {
+            if (label == null || onAction == null) {
+                visibility = View.GONE
+                setOnClickListener(null)
+            } else {
+                text = label
+                visibility = View.VISIBLE
+                setOnClickListener { onAction() }
+            }
+        }
+    }
+
+    fun clearPreviewInstruction() {
+        previewBubbleAnimator?.cancel()
+        previewBubbleAnimator = null
+        previewBubbleView?.let { runCatching { windowManager.removeView(it) } }
+        previewBubbleView = null
+        previewBubbleMessage = null
+        previewBubbleExpandedWidth = 0
+        previewBubbleCollapsed = false
+    }
+
+    /**
+     * The logo doubles as a drag handle: a small movement past touch slop repositions the whole
+     * bubble instead of toggling the message, and the dropped position is persisted so the bubble
+     * reopens where the user last left it.
+     */
+    private fun installPreviewBubbleGesture(view: View) {
+        val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+        var downRawX = 0f
+        var downRawY = 0f
+        var downParamsX = 0
+        var downParamsY = 0
+        var dragging = false
+        view.findViewById<View>(R.id.preview_bubble_logo).setOnTouchListener { _, event ->
+            val params = view.layoutParams as? WindowManager.LayoutParams
+                ?: return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    downParamsX = params.x
+                    downParamsY = params.y
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downRawX
+                    val dy = event.rawY - downRawY
+                    if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        dragging = true
+                    }
+                    if (dragging) {
+                        params.x = clampBubbleX(view, downParamsX - dx.roundToInt())
+                        params.y = clampBubbleY(view, downParamsY + dy.roundToInt())
+                        runCatching { windowManager.updateViewLayout(view, params) }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (dragging) {
+                        ProtectionPreferences.setPreviewBubblePosition(context, params.x, params.y)
+                    } else {
+                        val collapseNow = !previewBubbleCollapsed
+                        setPreviewBubbleCollapsed(view, collapsed = collapseNow, animate = true)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+    }
+
+    private fun clampBubbleX(view: View, x: Int): Int {
+        val maxX = (context.resources.displayMetrics.widthPixels - view.width).coerceAtLeast(0)
+        return x.coerceIn(0, maxX)
+    }
+
+    private fun clampBubbleY(view: View, y: Int): Int {
+        val maxY = (context.resources.displayMetrics.heightPixels - view.height).coerceAtLeast(0)
+        return y.coerceIn(0, maxY)
+    }
+
+    private fun setPreviewBubbleCollapsed(view: View, collapsed: Boolean, animate: Boolean) {
+        if (previewBubbleView !== view || previewBubbleCollapsed == collapsed) return
+        val collapsedWidth = dpToPx(PREVIEW_BUBBLE_COLLAPSED_WIDTH_DP)
+        val expandedWidth = previewBubbleExpandedWidth.takeIf { it > collapsedWidth }
+            ?: run {
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(
+                        context.resources.displayMetrics.widthPixels,
+                        View.MeasureSpec.AT_MOST
+                    ),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                view.measuredWidth
+            }
+        previewBubbleExpandedWidth = maxOf(previewBubbleExpandedWidth, expandedWidth)
+        val currentWidth = view.width.coerceAtLeast(collapsedWidth)
+        val targetWidth = if (collapsed) collapsedWidth else previewBubbleExpandedWidth
+        previewBubbleCollapsed = collapsed
+        previewBubbleAnimator?.cancel()
+        if (!animate || currentWidth == targetWidth) {
+            updatePreviewBubbleWidth(view, targetWidth)
+            return
+        }
+        previewBubbleAnimator = ValueAnimator.ofInt(currentWidth, targetWidth).apply {
+            duration = PREVIEW_INSTRUCTION_ANIMATION_MS
+            addUpdateListener { updatePreviewBubbleWidth(view, it.animatedValue as Int) }
+            start()
+        }
+    }
+
+    /**
+     * The logo is the row's trailing child and must stay put at the fixed right edge, so its own
+     * width is never part of the shrinking budget: only the speech card ahead of it grows or
+     * shrinks, mirroring how the collapsed banner used to keep its handle from being clipped away.
+     */
+    private fun updatePreviewBubbleWidth(view: View, width: Int) {
+        if (previewBubbleView !== view) return
+        val trailingWidth = dpToPx(PREVIEW_BUBBLE_TRAILING_WIDTH_DP)
+        val cardWrap = view.findViewById<View>(R.id.preview_bubble_card_wrap)
+        val tail = view.findViewById<View>(R.id.preview_bubble_tail)
+        val cardWidth = (width - trailingWidth).coerceAtLeast(0)
+        val visible = cardWidth > 0
+        cardWrap.visibility = if (visible) View.VISIBLE else View.GONE
+        tail.visibility = if (visible) View.VISIBLE else View.GONE
+        if (cardWrap.layoutParams.width != cardWidth) {
+            cardWrap.layoutParams = cardWrap.layoutParams.apply { this.width = cardWidth }
+        }
+        val params = view.layoutParams as? WindowManager.LayoutParams ?: return
+        params.width = width
+        runCatching { windowManager.updateViewLayout(view, params) }
+    }
+
+    private fun previewBubbleLayoutParams(
+        useSavedPosition: Boolean = true
+    ) = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.WRAP_CONTENT,
+        WindowManager.LayoutParams.WRAP_CONTENT,
+        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+        PixelFormat.TRANSLUCENT
+    ).apply {
+        gravity = Gravity.TOP or Gravity.END
+        val saved = ProtectionPreferences.previewBubblePosition(context)
+            .takeIf { useSavedPosition }
+        x = saved?.first ?: dpToPx(PREVIEW_BUBBLE_MARGIN_END_DP)
+        y = saved?.second ?: dpToPx(PREVIEW_BUBBLE_MARGIN_TOP_DP)
+    }
+
+    private fun dpToPx(dp: Int): Int =
+        (dp * context.resources.displayMetrics.density).roundToInt()
+
+    fun showPreviewBlock(
+        title: String,
+        description: String,
+        buttonLabel: String,
+        onContinue: () -> Unit
+    ) {
+        if (!canShowBlockingOverlays()) return
+        clearPreviewInstruction()
+        clearPreviewBlock()
+        val view = View.inflate(context, R.layout.layout_preview_block, null)
+        view.findViewById<TextView>(R.id.preview_block_title).text = title
+        view.findViewById<TextView>(R.id.preview_block_description).text = description
+        view.findViewById<Button>(R.id.preview_block_continue).apply {
+            text = buttonLabel
+            setOnClickListener { onContinue() }
+        }
+        if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
+        previewBlockingView = view
+    }
+
+    fun clearPreviewBlock() {
+        val view = previewBlockingView ?: return
+        previewBlockingView = null
+        runCatching { windowManager.removeView(view) }
+    }
+
+    fun clearPreviewOverlays() {
+        clearPreviewInstruction()
+        clearPreviewBlock()
     }
 
     fun showLocalizedBlockingOverlays(
@@ -583,5 +904,14 @@ internal class OverlayManager(
         private const val OVERLAY_MATCH_IOU = 0.45f
         private const val MEDIA_SIZE_MATCH_MIN = 0.65f
         private const val MEDIA_SIZE_MATCH_MAX = 1.55f
+        private const val PREVIEW_INSTRUCTION_ANIMATION_MS = 280L
+        // Trailing block = tail (8dp, -4dp start margin) + logo (52dp, 4dp start margin), the part
+        // of the bubble that always stays visible. Collapsed width drops the tail once it's gone.
+        private const val PREVIEW_BUBBLE_TRAILING_WIDTH_DP = 60
+        private const val PREVIEW_BUBBLE_COLLAPSED_WIDTH_DP = 56
+        private const val PREVIEW_BUBBLE_ENTRANCE_DISTANCE_DP = 80
+        private const val PREVIEW_BUBBLE_ENTRANCE_MS = 320L
+        private const val PREVIEW_BUBBLE_MARGIN_END_DP = 16
+        private const val PREVIEW_BUBBLE_MARGIN_TOP_DP = 16
     }
 }
