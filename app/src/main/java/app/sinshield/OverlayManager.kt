@@ -78,6 +78,8 @@ internal class OverlayManager(
     private var previewBubbleCollapsed = false
     private var previewBubbleAnimator: ValueAnimator? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val failOpenWatchdog = OverlayFailOpenWatchdog(mainHandler)
+    private val blockingOverlayExpirations = mutableMapOf<View, Runnable>()
     private val activeIncidents = mutableSetOf<IncidentId>()
 
     /** Read-only handle so recovery can inspect the current full-screen block without owning it. */
@@ -154,10 +156,12 @@ internal class OverlayManager(
             showRecoveryStatus(view)
             actions.onCloseApp(app)
         }
+        // Recovery navigation is best-effort. A full-screen accessibility window must always have
+        // a direct production escape that removes SinShield's own block.
+        view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
+            dismissAppBlockingOverlay(view, incident, actions)
+        }
         if (GlobalDebugMode.ENABLED) {
-            view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
-                currentIncident(view, incident)?.let(actions::onDismiss)
-            }
             view.findViewById<Button>(R.id.feedback_yes).setOnClickListener {
                 currentIncident(view, incident)?.let { active ->
                     actions.onFeedback(active, true) { }
@@ -178,8 +182,12 @@ internal class OverlayManager(
             }
         }
 
-        if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
+        if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         appBlockingOverlay = AppBlockingOverlay(app, view, incident, mode)
+        updateFailOpenWatchdog()
+        armMaximumLifetime(view) {
+            dismissAppBlockingOverlay(view, incident, actions)
+        }
         restartRecoveryCooldown(view, actions)
         Log.i(
             TAG,
@@ -260,10 +268,8 @@ internal class OverlayManager(
     }
 
     private fun configureDebugControls(view: View, resetFeedback: Boolean) {
-        val dismissEnabled = DebugSettings.overlayDismiss(context)
         val feedbackEnabled = DebugSettings.overlayFeedback(context)
-        view.findViewById<View>(R.id.dismiss_overlay).visibility =
-            if (dismissEnabled) View.VISIBLE else View.GONE
+        view.findViewById<View>(R.id.dismiss_overlay).visibility = View.VISIBLE
         view.findViewById<TextView>(R.id.feedback_prompt).visibility =
             if (feedbackEnabled) View.VISIBLE else View.GONE
         if (feedbackEnabled) {
@@ -277,6 +283,17 @@ internal class OverlayManager(
     private fun currentIncident(view: View, fallback: IncidentId): IncidentId? {
         val overlay = appBlockingOverlay
         return if (overlay == null || overlay.view === view) overlay?.incident ?: fallback else null
+    }
+
+    /** Removes the touch-blocking window before any optional scanner or navigation bookkeeping. */
+    private fun dismissAppBlockingOverlay(
+        view: View,
+        fallback: IncidentId,
+        actions: AppBlockActions
+    ) {
+        val incident = currentIncident(view, fallback) ?: return
+        removeAppBlockingOverlay()
+        actions.onDismiss(incident)
     }
 
     private fun resetFeedbackQuestion(view: View) {
@@ -308,11 +325,19 @@ internal class OverlayManager(
     )
 
     /** Toggles FLAG_NOT_TOUCHABLE on the full-screen block so a shielded gesture can pass through. */
-    fun setAppOverlayTouchable(touchable: Boolean) {
-        val view = appBlockingOverlay?.view ?: return
-        runCatching {
+    fun setAppOverlayTouchable(touchable: Boolean): Boolean {
+        val view = appBlockingOverlay?.view ?: return false
+        val updated = runCatching {
             windowManager.updateViewLayout(view, appBlockingLayoutParams(touchable))
+        }.onFailure {
+            Log.e(TAG, "Could not make full-screen block touchable=$touchable", it)
+        }.isSuccess
+        if (!updated && touchable) {
+            // A shield that cannot restore its controls is unsafe. Remove it instead of preserving
+            // protection at the cost of a potentially unusable phone.
+            removeAppBlockingOverlay()
         }
+        return updated
     }
 
     /**
@@ -323,7 +348,9 @@ internal class OverlayManager(
         val overlay = appBlockingOverlay ?: return
         appBlockingOverlay = null
         if (cooldownView === overlay.view) cooldownView = null
-        runCatching { windowManager.removeView(overlay.view) }
+        cancelMaximumLifetime(overlay.view)
+        removeViewOrTerminate(overlay.view, "full-screen app block")
+        updateFailOpenWatchdog()
         Log.i(TAG, "Removed full-screen block for ${overlay.app.packageName}")
     }
 
@@ -332,6 +359,7 @@ internal class OverlayManager(
             Log.w(TAG, "Website block suppressed; overlay permission is not granted")
             return
         }
+        clearSiteBlockingOverlay()
         val view = View.inflate(context, R.layout.layout_site_block, null)
         view.findViewById<Button>(R.id.open_safe_page).setOnClickListener {
             actions.onOpenSafePage()
@@ -339,15 +367,31 @@ internal class OverlayManager(
         view.findViewById<Button>(R.id.go_back).setOnClickListener {
             actions.onGoBack()
         }
-        if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
+        view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
+            dismissSiteBlockingOverlay(view, actions)
+        }
+        if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         siteBlockingOverlay = SiteBlockingOverlay(packageName, domain, view)
+        updateFailOpenWatchdog()
+        armMaximumLifetime(view) {
+            dismissSiteBlockingOverlay(view, actions)
+        }
         Log.i(TAG, "Website block shown above $packageName")
+    }
+
+    /** Retires the window first, then lets recovery navigate away from the blocked page. */
+    private fun dismissSiteBlockingOverlay(view: View, actions: SiteBlockActions) {
+        if (siteBlockingOverlay?.view !== view) return
+        clearSiteBlockingOverlay()
+        actions.onGoBack()
     }
 
     fun clearSiteBlockingOverlay() {
         val overlay = siteBlockingOverlay ?: return
         siteBlockingOverlay = null
-        runCatching { windowManager.removeView(overlay.view) }
+        cancelMaximumLifetime(overlay.view)
+        removeViewOrTerminate(overlay.view, "website block")
+        updateFailOpenWatchdog()
         Log.i(TAG, "Removed website block for ${overlay.packageName}")
     }
 
@@ -635,14 +679,21 @@ internal class OverlayManager(
             text = buttonLabel
             setOnClickListener { onContinue() }
         }
-        if (!addOverlay(view, appBlockingLayoutParams(touchable = true))) return
+        view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
+            clearPreviewBlock()
+        }
+        if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         previewBlockingView = view
+        updateFailOpenWatchdog()
+        armMaximumLifetime(view, ::clearPreviewBlock)
     }
 
     fun clearPreviewBlock() {
         val view = previewBlockingView ?: return
         previewBlockingView = null
-        runCatching { windowManager.removeView(view) }
+        cancelMaximumLifetime(view)
+        removeViewOrTerminate(view, "setup preview block")
+        updateFailOpenWatchdog()
     }
 
     fun clearPreviewOverlays() {
@@ -892,6 +943,63 @@ internal class OverlayManager(
             .onFailure { Log.e(TAG, "Could not show blocking overlay", it) }
             .isSuccess
 
+    /** Arms fail-open monitoring before WindowManager can make a touch-blocking window visible. */
+    private fun addBlockingOverlay(
+        view: View,
+        layoutParams: WindowManager.LayoutParams
+    ): Boolean {
+        failOpenWatchdog.setBlockingOverlayActive(true)
+        val added = addOverlay(view, layoutParams)
+        if (!added) updateFailOpenWatchdog()
+        return added
+    }
+
+    /**
+     * No touch-blocking SinShield window may remain indefinitely, even while everything appears
+     * healthy. Repeated scans do not renew this lease; only a newly added window gets a fresh one.
+     */
+    private fun armMaximumLifetime(view: View, onExpired: () -> Unit) {
+        cancelMaximumLifetime(view)
+        val expiration = Runnable {
+            blockingOverlayExpirations.remove(view)
+            if (isTrackedBlockingOverlay(view)) {
+                Log.w(TAG, "Blocking overlay reached its safety lifetime; failing open")
+                onExpired()
+            }
+        }
+        blockingOverlayExpirations[view] = expiration
+        mainHandler.postDelayed(expiration, MAX_BLOCKING_OVERLAY_LIFETIME_MS)
+    }
+
+    private fun cancelMaximumLifetime(view: View) {
+        blockingOverlayExpirations.remove(view)?.let(mainHandler::removeCallbacks)
+    }
+
+    private fun isTrackedBlockingOverlay(view: View): Boolean =
+        appBlockingOverlay?.view === view ||
+            siteBlockingOverlay?.view === view ||
+            previewBlockingView === view
+
+    private fun updateFailOpenWatchdog() {
+        failOpenWatchdog.setBlockingOverlayActive(
+            appBlockingOverlay != null || siteBlockingOverlay != null || previewBlockingView != null
+        )
+    }
+
+    private fun removeViewOrTerminate(view: View, description: String) {
+        runCatching { windowManager.removeView(view) }
+            .onFailure {
+                Log.e(TAG, "Could not remove $description", it)
+                failOpenWatchdog.terminateNow("WindowManager could not remove $description")
+            }
+    }
+
+    fun shutdown() {
+        blockingOverlayExpirations.values.forEach(mainHandler::removeCallbacks)
+        blockingOverlayExpirations.clear()
+        failOpenWatchdog.shutdown()
+    }
+
     private fun windowChanged(first: Int, second: Int): Boolean =
         first != UNKNOWN_WINDOW_ID && second != UNKNOWN_WINDOW_ID && first != second
 
@@ -900,6 +1008,7 @@ internal class OverlayManager(
         private const val UNKNOWN_WINDOW_ID = -1
         private const val RECOVERY_ACTION_REST_SECONDS = 5
         private const val RECOVERY_ACTION_REST_MS = RECOVERY_ACTION_REST_SECONDS * 1_000L
+        internal const val MAX_BLOCKING_OVERLAY_LIFETIME_MS = 60_000L
         private const val MAX_SIMULTANEOUS_OVERLAYS = 3
         private const val OVERLAY_MATCH_IOU = 0.45f
         private const val MEDIA_SIZE_MATCH_MIN = 0.65f

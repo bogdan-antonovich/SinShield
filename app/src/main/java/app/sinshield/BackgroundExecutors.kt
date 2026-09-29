@@ -3,6 +3,7 @@ package app.sinshield
 import android.os.Process
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -12,6 +13,9 @@ internal fun newBackgroundSingleThreadExecutor(name: String): ExecutorService =
 
 internal fun newBackgroundFixedThreadPool(name: String, threads: Int): ExecutorService =
     Executors.newFixedThreadPool(threads, backgroundThreadFactory(name))
+
+internal fun newBackgroundScheduledExecutor(name: String): ScheduledExecutorService =
+    Executors.newSingleThreadScheduledExecutor(backgroundThreadFactory(name))
 
 private fun backgroundThreadFactory(name: String): ThreadFactory {
     val nextId = AtomicInteger(1)

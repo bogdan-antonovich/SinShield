@@ -20,7 +20,6 @@ internal object DebugSettings {
     private const val PREFERENCES = "debug_settings"
     private const val PHOTO_DUMPS = "photo_dumps"
     private const val OVERLAY_FEEDBACK = "overlay_feedback"
-    private const val OVERLAY_DISMISS = "overlay_dismiss"
     private const val LAST_SHUTDOWN = "last_shutdown"
 
     @Suppress("SimplifyBooleanWithConstants")
@@ -35,13 +34,6 @@ internal object DebugSettings {
 
     fun setOverlayFeedback(context: Context, enabled: Boolean) =
         write(context, OVERLAY_FEEDBACK, enabled)
-
-    @Suppress("SimplifyBooleanWithConstants")
-    fun overlayDismiss(context: Context): Boolean =
-        GlobalDebugMode.ENABLED && preferences(context).getBoolean(OVERLAY_DISMISS, false)
-
-    fun setOverlayDismiss(context: Context, enabled: Boolean) =
-        write(context, OVERLAY_DISMISS, enabled)
 
     @Suppress("SimplifyBooleanWithConstants")
     fun lastShutdown(context: Context): Boolean =

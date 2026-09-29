@@ -890,6 +890,13 @@ class ShieldAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "Accessibility service interrupted")
+        cancelScheduledScan()
+        if (::scanner.isInitialized) scanner.clearConfirmation()
+        if (::overlays.isInitialized && ::recovery.isInitialized) {
+            clearLocalizedOverlays()
+            overlays.clearSiteBlockingOverlay()
+            overlays.clearPreviewOverlays()
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -925,6 +932,7 @@ class ShieldAccessibilityService : AccessibilityService() {
         runCatching { unregisterReceiver(blockedDomainReceiver) }
         scanner.shutdown()
         previewExecutor.shutdownNow()
+        overlays.shutdown()
         super.onDestroy()
     }
 

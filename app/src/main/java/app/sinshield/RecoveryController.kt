@@ -65,10 +65,13 @@ internal class RecoveryController(
 
     private var recoveryVerificationInProgress = false
     private var recoveryVerificationTimeout: Runnable? = null
+    private var passthroughGeneration = 0L
+    private var passthroughTimeout: Runnable? = null
 
     /** Resets the navigation flags this class owns, then has OverlayManager remove the window. */
     fun clearAppBlock() {
         cancelRecoveryVerificationTimeout()
+        cancelPassthroughTimeout()
         navigationActionInProgress = false
         closingAppInProgress = false
         recoveryVerificationInProgress = false
@@ -204,10 +207,14 @@ internal class RecoveryController(
         setActionButtonsEnabled(overlay.view, false)
         overlay.view.findViewById<TextView>(R.id.blocked_explanation)
             .setText(R.string.skipping_story)
-        overlays.setAppOverlayTouchable(false)
+        val passthrough = beginGesturePassthrough {
+            showPrimaryActionFailure(R.string.unable_to_skip_story)
+        } ?: return
         handler.postDelayed(
             {
-                if (overlays.appOverlay == null) return@postDelayed
+                if (!isPassthroughActive(passthrough) || overlays.appOverlay == null) {
+                    return@postDelayed
+                }
                 val width = service.resources.displayMetrics.widthPixels.toFloat()
                 val height = service.resources.displayMetrics.heightPixels.toFloat()
                 val path = Path().apply {
@@ -222,7 +229,7 @@ internal class RecoveryController(
                     gesture,
                     object : GestureResultCallback() {
                         override fun onCompleted(gestureDescription: GestureDescription?) {
-                            overlays.setAppOverlayTouchable(true)
+                            if (!completeGesturePassthrough(passthrough)) return
                             Log.i(
                                 TAG,
                                 "Skipped current ${overlays.appOverlay?.app?.displayName ?: "social"} " +
@@ -232,15 +239,16 @@ internal class RecoveryController(
                         }
 
                         override fun onCancelled(gestureDescription: GestureDescription?) {
-                            overlays.setAppOverlayTouchable(true)
+                            if (!completeGesturePassthrough(passthrough)) return
                             showPrimaryActionFailure(R.string.unable_to_skip_story)
                         }
                     },
                     handler
                 )
                 if (!accepted) {
-                    overlays.setAppOverlayTouchable(true)
-                    showPrimaryActionFailure(R.string.unable_to_skip_story)
+                    if (completeGesturePassthrough(passthrough)) {
+                        showPrimaryActionFailure(R.string.unable_to_skip_story)
+                    }
                 }
             },
             OVERLAY_PASSTHROUGH_SETTLE_MS
@@ -267,10 +275,12 @@ internal class RecoveryController(
         endYPercent: Float = GESTURE_END_Y_PERCENT
     ) {
         overlays.appOverlay ?: return
-        overlays.setAppOverlayTouchable(false)
+        val passthrough = beginGesturePassthrough(::showScrollFailure) ?: return
         handler.postDelayed(
             {
-                if (overlays.appOverlay == null) return@postDelayed
+                if (!isPassthroughActive(passthrough) || overlays.appOverlay == null) {
+                    return@postDelayed
+                }
                 val width = service.resources.displayMetrics.widthPixels.toFloat()
                 val height = service.resources.displayMetrics.heightPixels.toFloat()
                 val path = Path().apply {
@@ -286,21 +296,20 @@ internal class RecoveryController(
                     gesture,
                     object : GestureResultCallback() {
                         override fun onCompleted(gestureDescription: GestureDescription?) {
-                            overlays.setAppOverlayTouchable(true)
+                            if (!completeGesturePassthrough(passthrough)) return
                             Log.i(TAG, "Scroll-past performed through settled shielded gesture")
                             scheduleActionVerification()
                         }
 
                         override fun onCancelled(gestureDescription: GestureDescription?) {
-                            overlays.setAppOverlayTouchable(true)
+                            if (!completeGesturePassthrough(passthrough)) return
                             showScrollFailure()
                         }
                     },
                     handler
                 )
                 if (!accepted) {
-                    overlays.setAppOverlayTouchable(true)
-                    showScrollFailure()
+                    if (completeGesturePassthrough(passthrough)) showScrollFailure()
                 }
             },
             OVERLAY_PASSTHROUGH_SETTLE_MS
@@ -713,7 +722,7 @@ internal class RecoveryController(
     }
 
     private fun swipeRecentCardAway(bounds: Rect) {
-        overlays.setAppOverlayTouchable(false)
+        val passthrough = beginGesturePassthrough(::finishClosingApp) ?: return
         val path = Path().apply {
             moveTo(bounds.centerX().toFloat(), bounds.centerY().toFloat())
             lineTo(bounds.centerX().toFloat(), -bounds.height().toFloat())
@@ -727,18 +736,61 @@ internal class RecoveryController(
             gesture,
             object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (!completeGesturePassthrough(passthrough)) return
                     Log.i(TAG, "Swiped task away from Recents")
                     handler.postDelayed(::finishClosingApp, RECENTS_DISMISS_SETTLE_DELAY_MS)
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (!completeGesturePassthrough(passthrough)) return
                     Log.w(TAG, "Recents swipe was cancelled")
                     finishClosingApp()
                 }
             },
             handler
         )
-        if (!accepted) finishClosingApp()
+        if (!accepted && completeGesturePassthrough(passthrough)) finishClosingApp()
+    }
+
+    /**
+     * Bounds the interval in which the opaque shield lets touches pass through. Gesture callbacks
+     * are asynchronous platform events, so an accepted gesture must not be trusted to restore the
+     * overlay by itself. A late callback is ignored after the timeout has already failed open.
+     */
+    private fun beginGesturePassthrough(onTimeout: () -> Unit): Long? {
+        cancelPassthroughTimeout()
+        if (!overlays.setAppOverlayTouchable(false)) {
+            onTimeout()
+            return null
+        }
+        val generation = ++passthroughGeneration
+        val timeout = Runnable {
+            if (generation != passthroughGeneration) return@Runnable
+            passthroughTimeout = null
+            passthroughGeneration++
+            Log.e(TAG, "Shielded gesture callback timed out; restoring overlay controls")
+            overlays.setAppOverlayTouchable(true)
+            onTimeout()
+        }
+        passthroughTimeout = timeout
+        handler.postDelayed(timeout, GESTURE_CALLBACK_TIMEOUT_MS)
+        return generation
+    }
+
+    private fun isPassthroughActive(generation: Long): Boolean =
+        passthroughTimeout != null && passthroughGeneration == generation
+
+    private fun completeGesturePassthrough(generation: Long): Boolean {
+        if (!isPassthroughActive(generation)) return false
+        cancelPassthroughTimeout()
+        passthroughGeneration++
+        overlays.setAppOverlayTouchable(true)
+        return true
+    }
+
+    private fun cancelPassthroughTimeout() {
+        passthroughTimeout?.let(handler::removeCallbacks)
+        passthroughTimeout = null
     }
 
     private fun finishClosingApp() {
@@ -908,6 +960,7 @@ internal class RecoveryController(
         private const val RECENTS_OPEN_DELAY_MS = 650L
         private const val RECENTS_DISMISS_SETTLE_DELAY_MS = 350L
         private const val RECENTS_SWIPE_DURATION_MS = 380L
+        private const val GESTURE_CALLBACK_TIMEOUT_MS = 2_000L
         private const val CLOSE_OVERLAY_GRACE_MS = 250L
         private const val SAFE_PAGE_OPEN_DELAY_MS = 250L
         private const val SAFE_PAGE_URL = "https://www.google.com/"

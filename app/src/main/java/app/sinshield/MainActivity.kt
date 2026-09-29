@@ -230,7 +230,6 @@ fun MainScreen(
     var setupGuide by remember { mutableStateOf<SetupGuide?>(null) }
     var debugPhotoDumps by remember { mutableStateOf(DebugSettings.photoDumps(context)) }
     var debugOverlayFeedback by remember { mutableStateOf(DebugSettings.overlayFeedback(context)) }
-    var debugOverlayDismiss by remember { mutableStateOf(DebugSettings.overlayDismiss(context)) }
     var debugLastShutdown by remember { mutableStateOf(DebugSettings.lastShutdown(context)) }
     var streakSnapshot by remember {
         mutableStateOf(
@@ -1062,22 +1061,6 @@ fun MainScreen(
                     details = SettingDetails(
                         "Overlay feedback",
                         "Adds Yes and No feedback controls to new full-screen blocking overlays. False-positive reports include the captured evidence."
-                    )
-                }
-                AppDivider()
-                SettingsRow(
-                    "Overlay close button",
-                    "Show a debug-only button that immediately dismisses a blocking overlay",
-                    debugOverlayDismiss,
-                    R.drawable.ic_layers,
-                    {
-                        debugOverlayDismiss = it
-                        DebugSettings.setOverlayDismiss(context, it)
-                    }
-                ) {
-                    details = SettingDetails(
-                        "Overlay close button",
-                        "Shows the debug dismiss button on new full-screen blocking overlays, bypassing the normal recovery choices."
                     )
                 }
                 AppDivider()
