@@ -11,6 +11,8 @@
 .DS_Store
 /build
 /app/release/
+*.aab
+*.apk
 /captures
 .externalNativeBuild
 .cxx
