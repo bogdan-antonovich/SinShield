@@ -94,6 +94,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import app.sinshield.ui.theme.SwitzerHeavyFontFamily
 import app.sinshield.ui.theme.SinSheldTheme
+import com.google.android.play.core.appupdate.AppUpdateManager
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.model.UpdateAvailability
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -120,32 +123,139 @@ private const val PREVIEW_SCROLL_ANIMATION_MS = 450
 private const val PREVIEW_SCRIM_REVEAL_MS = 900
 private const val PREVIEW_EXPLANATION_REVEAL_MS = 420
 
+private enum class AppUpdateGateState {
+    CHECKING,
+    CURRENT,
+    REQUIRED
+}
+
 class MainActivity : ComponentActivity() {
+    private lateinit var appUpdateManager: AppUpdateManager
+    private var appUpdateGateState by mutableStateOf(AppUpdateGateState.CHECKING)
+    private var firstResume = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appUpdateManager = AppUpdateManagerFactory.create(this)
         enableEdgeToEdge()
         ProtectionHealthMonitor.start(this)
         ProtectionHealthMonitor.restoreExpectedProtection(this)
         setContent {
             SinSheldTheme {
-                var showLoadingScreen by remember { mutableStateOf(true) }
-                var appContentReady by remember { mutableStateOf(false) }
+                CurrentAppContent()
+            }
+        }
+        checkForRequiredUpdate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!::appUpdateManager.isInitialized) return
+        if (firstResume) {
+            firstResume = false
+            return
+        }
+        checkForRequiredUpdate()
+    }
+
+    @Composable
+    private fun CurrentAppContent() {
+        var showLoadingScreen by remember { mutableStateOf(true) }
+        var appContentReady by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(containerColor = ScreenBlue) { padding ->
                 Box(Modifier.fillMaxSize()) {
-                    Scaffold(containerColor = ScreenBlue) { padding ->
-                        MainScreen(
+                    MainScreen(
+                        modifier = Modifier.padding(padding),
+                        guideOfferCanStart =
+                            !showLoadingScreen && appUpdateGateState == AppUpdateGateState.CURRENT,
+                        guideUiBlocked = appUpdateGateState != AppUpdateGateState.CURRENT,
+                        onReady = { appContentReady = true },
+                        onPreviewRequiredUpdate = {
+                            appUpdateGateState = AppUpdateGateState.REQUIRED
+                        }
+                    )
+                    if (appUpdateGateState == AppUpdateGateState.REQUIRED) {
+                        RequiredAppUpdateScreen(
                             modifier = Modifier.padding(padding),
-                            guideOfferCanStart = !showLoadingScreen,
-                            onReady = { appContentReady = true }
-                        )
-                    }
-                    if (showLoadingScreen) {
-                        SinShieldLoadingScreen(
-                            readyToFinish = appContentReady,
-                            onFinished = { showLoadingScreen = false }
+                            onUpdate = ::openPlayStoreListing,
+                            onClose = ::finishAndRemoveTask
                         )
                     }
                 }
             }
+            if (showLoadingScreen) {
+                SinShieldLoadingScreen(
+                    readyToFinish =
+                        appContentReady && appUpdateGateState != AppUpdateGateState.CHECKING,
+                    onFinished = { showLoadingScreen = false }
+                )
+            }
+        }
+    }
+
+    private fun checkForRequiredUpdate() {
+        appUpdateManager.appUpdateInfo
+            .addOnSuccessListener { appUpdateInfo ->
+                when (appUpdateInfo.updateAvailability()) {
+                    UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS,
+                    UpdateAvailability.UPDATE_AVAILABLE -> {
+                        appUpdateGateState = AppUpdateGateState.REQUIRED
+                    }
+
+                    else -> appUpdateGateState = AppUpdateGateState.CURRENT
+                }
+            }
+            .addOnFailureListener {
+                // A temporary Play/network failure must not permanently lock users out.
+                if (appUpdateGateState == AppUpdateGateState.CHECKING) {
+                    appUpdateGateState = AppUpdateGateState.CURRENT
+                }
+            }
+    }
+
+    private fun openPlayStoreListing() {
+        val marketIntent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("market://details?id=$packageName")
+        ).setPackage("com.android.vending")
+        runCatching { startActivity(marketIntent) }
+            .onFailure {
+                startActivity(
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+                    )
+                )
+            }
+    }
+}
+
+@Composable
+private fun RequiredAppUpdateScreen(
+    modifier: Modifier = Modifier,
+    onUpdate: () -> Unit,
+    onClose: () -> Unit
+) {
+    BackHandler(onBack = onClose)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Ink.copy(alpha = 0.78f))
+    ) {
+        RobotGuideMessage(
+            title = "You’ve gotta update SinShield",
+            description = "A newer version is ready. To keep using SinShield, update the app " +
+                "through Google Play.",
+            emphasizedPhrases = listOf("newer version", "update the app"),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(start = 12.dp, top = 18.dp, end = 12.dp),
+            animateEntrance = true
+        ) {
+            PreviewPrimaryButton("Update now", onUpdate)
+            PreviewSecondaryButton("Close app", onClose)
         }
     }
 }
@@ -181,7 +291,9 @@ private data class SetupStep(val text: String, val boldPhrases: List<String>)
 fun MainScreen(
     modifier: Modifier = Modifier,
     guideOfferCanStart: Boolean = true,
-    onReady: () -> Unit = {}
+    guideUiBlocked: Boolean = false,
+    onReady: () -> Unit = {},
+    onPreviewRequiredUpdate: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -371,7 +483,7 @@ fun MainScreen(
         }
     }
 
-    if (previewUiAllowed) when (previewStage) {
+    if (previewUiAllowed && !guideUiBlocked) when (previewStage) {
         ProtectionPreviewStage.ACCESSIBILITY,
         ProtectionPreviewStage.OVERLAY,
         ProtectionPreviewStage.BATTERY,
@@ -461,12 +573,13 @@ fun MainScreen(
         return
     }
 
-    val permissionPreviewActive = previewUiAllowed && (
+    val permissionPreviewActive = previewUiAllowed && !guideUiBlocked && (
         previewStage == ProtectionPreviewStage.ACCESSIBILITY ||
             previewStage == ProtectionPreviewStage.OVERLAY ||
             previewStage == ProtectionPreviewStage.VPN
         )
-    val settingsTourActive = previewUiAllowed && previewStage in settingsTourStages
+    val settingsTourActive =
+        previewUiAllowed && !guideUiBlocked && previewStage in settingsTourStages
     val guidedPreviewActiveRaw = permissionPreviewActive || settingsTourActive
     val mainDensity = LocalDensity.current
     val mainScrollState = rememberScrollState()
@@ -1102,22 +1215,34 @@ fun MainScreen(
                         }
                     }
                 }
-            }
-        }
-        if (GlobalDebugMode.ENABLED) {
-            Spacer(Modifier.height(24.dp))
-            Button(
-                onClick = {
-                    ProtectionPreviewRepository.restartForTesting(context)
-                    previewStage = ProtectionPreviewStage.IDLE
-                    previewUiAllowed = true
-                    showPreviewOffer = true
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = BrightBlue),
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("Run setup guide again", fontWeight = FontWeight.Bold)
+                AppDivider()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onPreviewRequiredUpdate,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrightBlue),
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                    ) {
+                        Text("Preview required update", fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            ProtectionPreviewRepository.restartForTesting(context)
+                            previewStage = ProtectionPreviewStage.IDLE
+                            previewUiAllowed = true
+                            showPreviewOffer = true
+                        },
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                    ) {
+                        Text("Run setup guide again", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -1246,7 +1371,7 @@ fun MainScreen(
             )
         }
 
-        if (previewUiAllowed && showPreviewOffer) {
+        if (previewUiAllowed && !guideUiBlocked && showPreviewOffer) {
             PreviewOfferScreen(
                 modifier = Modifier.matchParentSize(),
                 onRobotPositionChanged = { position ->
@@ -1277,7 +1402,11 @@ fun MainScreen(
             )
         }
 
-        if (previewUiAllowed && previewStage == ProtectionPreviewStage.READY) {
+        if (
+            previewUiAllowed &&
+            !guideUiBlocked &&
+            previewStage == ProtectionPreviewStage.READY
+        ) {
             PreviewReadyOverlay(
                 modifier = Modifier.matchParentSize(),
                 onContinue = {
@@ -1295,7 +1424,11 @@ fun MainScreen(
             )
         }
 
-        if (previewUiAllowed && previewStage == ProtectionPreviewStage.TOUR_INTRO) {
+        if (
+            previewUiAllowed &&
+            !guideUiBlocked &&
+            previewStage == ProtectionPreviewStage.TOUR_INTRO
+        ) {
             PreviewUiTourIntroOverlay(
                 modifier = Modifier.matchParentSize(),
                 onRobotPositionChanged = { position ->
@@ -1316,7 +1449,7 @@ fun MainScreen(
             )
         }
 
-        if (showPreviewFinishedCard) {
+        if (!guideUiBlocked && showPreviewFinishedCard) {
             PreviewFinishedOverlay(
                 modifier = Modifier.matchParentSize(),
                 onDone = finishPreview
