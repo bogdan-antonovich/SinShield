@@ -1,5 +1,7 @@
 # SinShield Blog Article Prompt
 
+Before planning, writing, or substantially revising a blog article, read and apply [`../../../SEO_ARTICLE_PLAYBOOK.md`](../../../SEO_ARTICLE_PLAYBOOK.md). Complete its research and go/no-go reasoning before drafting. Keep that decision work internal unless the user requests research notes, an outline, or alternatives; the final article must still follow the output rules in this file.
+
 Write a publication-ready SinShield blog article that matches the editorial voice and construction of the existing articles **“Porn on X”** and **“Accountability Apps.”** Use the instructions below as the complete style brief. Match the style, not the wording: do not recycle distinctive sentences, metaphors, examples, or claims from those articles unless they are independently relevant and verified for the new topic.
 
 ## Editorial goal
