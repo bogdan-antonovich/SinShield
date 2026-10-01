@@ -76,7 +76,7 @@ The AAP describes parental controls as tools that work better alongside positive
 
 ## Where SinShield does and does not fit
 
-[SinShield](/products/android) is our product, but it is not a full parental-control system. It can block known adult domains and cover explicit or suggestive imagery in Instagram and X on Android 11+, with screen frames analyzed on the device, but it has no parent dashboard, location tracking, activity report, app approval flow, or tamper-proof remote management.
+[SinShield](/products/android) is our product, but it is not a full parental-control system. It can block known adult domains and cover explicit or suggestive imagery in Instagram and X on Android, with screen frames analyzed on the device, but it has no parent dashboard, location tracking, activity report, app approval flow, or tamper-proof remote management.
 
 It may add screen-level protection to an older child's Android setup when its scope and permissions are appropriate, but use Family Link or another genuine parental-control system for account supervision and setting management. SinShield also occupies Android's VPN slot for its DNS protection and can make classification mistakes.
 

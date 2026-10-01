@@ -38,12 +38,20 @@ export interface CalloutBlock {
   text: RichText
 }
 
+export interface ImageBlock {
+  type: 'image'
+  src: string
+  alt: string
+  caption?: string
+}
+
 export type ArticleBlock =
   | ParagraphBlock
   | HeadingBlock
   | ListBlock
   | TableBlock
   | CalloutBlock
+  | ImageBlock
 
 export interface ArticleSection {
   heading?: string

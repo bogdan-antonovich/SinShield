@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
         icon: '/icons/android-robot.svg',
         label: 'SinShield for Android',
         to: '/products/android',
-        description: 'Available for Android 11+',
+        description: 'Available for Android',
       },
     ],
   },

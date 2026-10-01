@@ -23,7 +23,7 @@ The information below was checked on September 24, 2026 and can change with prod
 
 | Feature | Canopy | SinShield |
 | --- | --- | --- |
-| Platforms | Android, iPhone/iPad, Mac, Windows, Chromebook | Android 11 and newer |
+| Platforms | Android, iPhone/iPad, Mac, Windows, Chromebook | Android |
 | Price | Paid subscription by device count | Free |
 | Account | Required | Not required |
 | Website protection | Real-time web filtering plus custom rules | Local DNS blocking of known adult domains |
@@ -84,7 +84,7 @@ The same design is a limitation for parents and for adults who specifically want
 
 ### SinShield's meaningful limits
 
-- It works only on Android 11 and newer.
+- It works only on Android.
 - Screen-level image protection currently supports Instagram and X, not every app.
 - Website protection uses Android's local VPN feature for DNS filtering, so it cannot run alongside another VPN.
 - It analyzes visible imagery rather than all text and video, and automated classification can miss unsafe content or cover a safe image.

@@ -47,7 +47,7 @@ const defaultFaqItems: FaqItem[] = [
   {
     question: 'Do I need an account or subscription?',
     answer:
-      'No. SinShield is free to use and does not require an account or cloud profile. It is currently available for Android 11 and newer.',
+      'No. SinShield is free to use and does not require an account or cloud profile. It is currently available for Android.',
   },
 ]
 

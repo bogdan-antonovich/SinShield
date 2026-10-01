@@ -19,7 +19,7 @@ Decide first whether another person seeing activity is essential, acceptable, or
 
 ## What Covenant Eyes currently provides
 
-Covenant Eyes' [support page](https://support.covenanteyes.com/hc/en-us/articles/11980844648987-What-devices-does-Victory-Shield-work-on) describes Victory Shield as supporting Android 11+, iOS 15.1+, macOS 11+, and Windows 10+, while the current US App Store listing requires a newer iOS version, so iPhone owners should verify compatibility at install. On Android, Mac, and Windows it can take screen captures for accountability; on iPhone, screenshot accountability is limited to Safari, while device-wide domain monitoring and filtering use a VPN-like process.
+Covenant Eyes' [support page](https://support.covenanteyes.com/hc/en-us/articles/11980844648987-What-devices-does-Victory-Shield-work-on) describes Victory Shield as supporting Android, iPhone, Mac, and Windows devices, though owners should still verify compatibility in their device's app store before installing. On Android, Mac, and Windows it can take screen captures for accountability; on iPhone, screenshot accountability is limited to Safari, while device-wide domain monitoring and filtering use a VPN-like process.
 
 Its monitoring system takes periodic screenshots, analyzes them, modifies and blurs them on the device, and transfers them so questionable activity and selected images can be reviewed by an Ally. Covenant Eyes' [monitoring documentation](https://support.covenanteyes.com/hc/en-us/articles/11976472404763-How-does-monitoring-work) says transferred images are stored in its encrypted database and not kept in the Victory app beyond the stated retention period.
 
@@ -39,7 +39,7 @@ SinShield sends no screenshots, browsing history, or activity reports to another
 
 Covenant Eyes covers the major phone and desktop platforms with platform-specific limits. Canopy supports Android, iPhone and iPad, Mac, Windows, and Chromebook according to its [current device requirements](https://support.canopy.us/portal/en/kb/articles/what-kinds-of-devices-does-canopy-work-with).
 
-SinShield currently supports Android 11 and newer only. If your vulnerable route is an iPhone, Mac, Windows PC, or Chromebook, SinShield cannot replace Covenant Eyes on that device.
+SinShield is available only on Android. If your vulnerable route is an iPhone, Mac, Windows PC, or Chromebook, SinShield cannot replace Covenant Eyes on that device.
 
 ### 3. Do you need domains blocked or explicit material filtered inside allowed pages?
 

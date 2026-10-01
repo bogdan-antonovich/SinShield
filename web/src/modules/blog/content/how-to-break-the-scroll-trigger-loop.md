@@ -54,7 +54,7 @@ Put the replacement where the cue happens. If late-night scrolling begins in bed
 
 When you notice the loop has already started, avoid negotiating with it for ten minutes. Close the app, put the phone out of reach, stand up, and begin the replacement you chose. A fixed sequence reduces the number of decisions you need to make while your attention is already narrowed.
 
-If explicit content appeared unexpectedly, separate the exposure from the next choice. You did not choose the first frame, but you can choose whether to keep searching, leave the app, or enable another protection layer for the next time. For platform-specific controls, our guide to [blocking porn on X](/blog/porn-on-x) explains the settings and their limits.
+If explicit content appeared unexpectedly, separate the exposure from the next choice. You did not choose the first frame, but you can choose whether to keep searching, leave the app, or enable another protection layer for the next time. For platform-specific controls, use our guides to [blocking adult content on Instagram](/blog/how-to-block-adult-content-instagram) and [blocking adult content on X](/blog/how-to-block-adult-content-on-x).
 
 ## Treat a setback as information
 

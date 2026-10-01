@@ -36,7 +36,7 @@ No consumer blocker is impossible to bypass, and no automatic filter catches eve
 
 | Option | Permanently free? | Adult websites | Content inside apps | Monitoring or screenshots | Main limitation |
 | --- | --- | --- | --- | --- | --- |
-| SinShield | Yes | Known adult domains | Covers detected imagery in Instagram and X | On-device analysis; no activity reports | Android 11+ and only supported apps |
+| SinShield | Yes | Known adult domains | Covers detected imagery in Instagram and X | On-device analysis; no activity reports | Android; supported apps only |
 | CleanBrowsing Free Filters | Yes | Adult-domain categories through DNS | No | Free resolvers require no account | Easy to change and cannot inspect a post or page |
 | Google Family Link | Yes | Tries to block explicit sites in supervised Chrome | Can block whole apps, not individual images | Parent can review and manage activity | Designed for supervised child accounts |
 | Google SafeSearch | Yes | No direct site blocking | Filters explicit Google results | Tied to Google account or managed settings | Does not cover direct links, other search engines, or apps |
@@ -61,7 +61,7 @@ SinShield is our product, so this is not a neutral recommendation. It leads this
 - **False positives and misses:** an image model can cover a safe image or miss explicit material, while a domain list can block a misclassified site or miss a new domain.
 
 > [!NOTE] Bottom line
-> Choose SinShield when your main device is Android 11 or newer and you want private, automatic protection without an account; choose another route when you need iPhone or computer coverage, remote parental control, or reports sent to another person.
+> Choose SinShield when your main device is Android and you want private, automatic protection without an account; choose another route when you need iPhone or computer coverage, remote parental control, or reports sent to another person.
 
 ## 2. CleanBrowsing: best free whole-network filter
 
@@ -157,7 +157,7 @@ The strongest free setup may use more than one narrow tool: DNS for known adult 
 
 ### Is there a completely free porn blocker for Android?
 
-Yes. SinShield is free for Android 11 and newer, CleanBrowsing provides free DNS filters, and Google Family Link provides free controls for supervised child accounts. They are not interchangeable: SinShield covers supported on-screen imagery and adult sites, CleanBrowsing filters domains, and Family Link manages a child’s account and apps.
+Yes. SinShield is free for Android, CleanBrowsing provides free DNS filters, and Google Family Link provides free controls for supervised child accounts. They are not interchangeable: SinShield covers supported on-screen imagery and adult sites, CleanBrowsing filters domains, and Family Link manages a child’s account and apps.
 
 ### Can a free porn blocker work without a subscription?
 
@@ -183,4 +183,4 @@ No. Device-owner controls, supervised accounts, protected settings, and an accou
 
 Write down the shortest route you use to reach unwanted content: a known website, Google Search, a social feed, a particular app, or an unmanaged browser. Choose the free tool that covers that route, enable it while your intention is clear, and test both an adult domain and a safe site so you understand what the protection changes.
 
-If the route is an Android 11+ phone and you want the analysis to stay private, [set up SinShield](/products/android), then check its supported-app coverage and permissions against your own needs. Add another layer only when it closes a gap you can name.
+If the route is an Android phone and you want the analysis to stay private, [set up SinShield](/products/android), then check its supported-app coverage and permissions against your own needs. Add another layer only when it closes a gap you can name.

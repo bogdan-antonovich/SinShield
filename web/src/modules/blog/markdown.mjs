@@ -75,6 +75,16 @@ function phrasingContent(nodes, sourceName) {
 }
 
 function paragraphBlock(node, sourceName) {
+  if (node.children.length === 1 && node.children[0].type === 'image') {
+    const image = node.children[0]
+    if (!image.alt?.trim()) fail(sourceName, 'article images require descriptive alt text')
+    return {
+      type: 'image',
+      src: image.url,
+      alt: image.alt.trim(),
+      ...(image.title?.trim() ? { caption: image.title.trim() } : {}),
+    }
+  }
   return { type: 'paragraph', text: phrasingContent(node.children, sourceName) }
 }
 

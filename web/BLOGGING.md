@@ -21,6 +21,8 @@ tags: ["Digital habits", "Focus"]
 
 Write the introduction here. Normal Markdown paragraphs, **bold text**, and [links](https://example.com) are supported.
 
+![Descriptive alt text](/images/existing-screenshot.png "Optional visible caption")
+
 > [!NOTE] The short answer
 > Use a callout for an important summary or practical takeaway.
 
@@ -42,6 +44,8 @@ Continue the article here.
 ```
 
 Use `##` for the main sections shown in the table of contents and `###` for subsections. Place the thumbnail file in `public/images`. The `slug` must be unique and should match the Markdown filename.
+
+Article screenshots can be inserted with normal Markdown image syntax. Alt text is required, and an optional quoted title is rendered as a visible caption. Use existing images from `public/images`; do not embed remote screenshots.
 
 To pin one article at the top of the blog, add `featured: true` to its front matter. Only one article should be featured at a time. Without that field, articles are ordered newest first by `publishedAt`.
 

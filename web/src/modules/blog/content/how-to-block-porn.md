@@ -57,7 +57,7 @@ For an adult managing their own Android phone, use a dedicated blocker, an adult
 
 ## Add adult-site filtering to a home network
 
-Changing the DNS resolver on a router can block known adult domains for devices using that network. For example, Cloudflare documents that [1.1.1.1 for Families](https://developers.cloudflare.com/1.1.1.1/setup/) offers an adult-content and malware option using `1.1.1.3` and `1.0.0.3`; when a domain is classified for blocking, the resolver returns a non-routable address instead of the site's address.
+Changing the DNS resolver on a router can block known adult domains for devices using that network. Our guide to [DNS adult-content blocking on Android](/blog/adult-content-blocker-android-dns) explains what that layer can and cannot see; for example, Cloudflare documents that [1.1.1.1 for Families](https://developers.cloudflare.com/1.1.1.1/setup/) offers an adult-content and malware option using `1.1.1.3` and `1.0.0.3`, and when a domain is classified for blocking, the resolver returns a non-routable address instead of the site's address.
 
 Router-level DNS is useful because one configuration can cover phones, computers, game consoles, and televisions on home Wi-Fi. It does not follow a phone onto mobile data unless that device is configured too, a user may change DNS or use another VPN, and domain classification can both miss a site and block a safe one.
 
@@ -65,11 +65,11 @@ Use a router administrator password that is not shared casually, test the provid
 
 ## Cover explicit content inside allowed apps
 
-Domain filtering cannot selectively remove one explicit post from Instagram or X while allowing the rest of the platform, because the safe and unsafe material arrives from the same service. Your choices are to leave or block the app, use its sensitive-content controls, clean the accounts and recommendations that shape the feed, or add a tool that examines visible content.
+Domain filtering cannot selectively remove one explicit post from Instagram or X while allowing the rest of the platform, because the safe and unsafe material arrives from the same service. Your choices are to leave or block the app, follow the platform-specific controls in our [Instagram guide](/blog/how-to-block-adult-content-instagram) and [X guide](/blog/how-to-block-adult-content-on-x), clean the accounts and recommendations that shape the feed, or add a tool that examines visible content.
 
 [SinShield for Android](/products/android), which is our product, provides that additional layer for supported apps. It analyzes visible frames on the phone, covers imagery classified as explicit or suggestive, and separately uses local DNS filtering to block known adult sites; screenshots are processed and discarded on the device rather than uploaded to SinShield.
 
-The limits are important. SinShield currently supports Android 11 and newer, its in-app image protection focuses on Instagram and X, Android allows only one VPN at a time, and automated detection can miss unsafe material or cover a safe image. It does not provide iPhone protection or send activity reports to an accountability partner.
+The limits are important. SinShield is Android-only, and its in-app image protection focuses on Instagram and X. Android allows only one VPN at a time, and automated detection can miss unsafe material or cover a safe image. SinShield does not provide iPhone protection or send activity reports to an accountability partner.
 
 ## Make the setup harder to undo impulsively
 

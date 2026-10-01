@@ -91,7 +91,7 @@ You do not have to find or enter those domains one at a time. SinShield download
 
 The second protection layer addresses a gap that domain filtering cannot. Social feeds and other user-generated platforms can place an explicit image on an allowed domain, so SinShield also uses on-device analysis to cover explicit or suggestive imagery in supported apps; the visible frames used for classification are discarded rather than uploaded.
 
-Its limitations matter for a parent's decision. The maintained list can still miss a new or unclassified site, website protection must remain enabled, SinShield supports Android 11 and newer, and Android permits only one active VPN at a time. Its screen-level image protection currently focuses on Instagram and X, while automated classification can miss unsafe content or cover a safe image. SinShield has no parent dashboard, app-approval system, human accountability reports, or tamper-proof remote management, so use Family Link as the supervision layer and SinShield for automatic website blocking and its narrower supported-app protection.
+Its limitations matter for a parent's decision. The maintained list can still miss a new or unclassified site, website protection must remain enabled, and Android permits only one active VPN at a time. Its screen-level image protection currently focuses on Instagram and X, while automated classification can miss unsafe content or cover a safe image. SinShield has no parent dashboard, app-approval system, human accountability reports, or tamper-proof remote management, so use Family Link as the supervision layer and SinShield for automatic website blocking and its narrower supported-app protection.
 
 ## 7. Make settings harder to change casually
 

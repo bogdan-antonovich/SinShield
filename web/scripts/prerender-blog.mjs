@@ -167,7 +167,6 @@ const articleMetaTitles = {
   'countries-where-porn-is-illegal': 'Where Is Porn Illegal? Country Laws Explained',
   'does-porn-lower-your-iq': 'Does Porn Lower Your IQ? Research Explained',
   'how-to-break-the-scroll-trigger-loop': 'How to Break the Scroll–Trigger Loop',
-  'porn-on-x': 'Porn on X: Rules, Filters, and How to Block It',
 }
 
 function articleMetaTitle(article) {
@@ -225,6 +224,10 @@ function renderBlock(block) {
       return `<aside>${
         block.label ? `<p><strong>${escapeHtml(block.label)}</strong></p>` : ''
       }<p>${renderRichText(block.text)}</p></aside>`
+    case 'image':
+      return `<figure><img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.alt)}" loading="lazy">${
+        block.caption ? `<figcaption>${escapeHtml(block.caption)}</figcaption>` : ''
+      }</figure>`
     default:
       return ''
   }

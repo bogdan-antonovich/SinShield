@@ -243,6 +243,11 @@ usePageMetadata(() => {
                 <RichText :value="block.text" />
               </p>
             </aside>
+
+            <figure v-else-if="block.type === 'image'" class="article-image">
+              <img :src="block.src" :alt="block.alt" loading="lazy" />
+              <figcaption v-if="block.caption">{{ block.caption }}</figcaption>
+            </figure>
             </template>
           </section>
         </article>
@@ -331,7 +336,8 @@ usePageMetadata(() => {
 .article-body section > ul,
 .article-body section > ol,
 .article-body section > .article-table-wrap,
-.article-body section > .article-callout {
+.article-body section > .article-callout,
+.article-body section > .article-image {
   margin-top: 1.6rem;
 }
 
@@ -427,5 +433,34 @@ usePageMetadata(() => {
   color: var(--ss-navy);
   font-size: 1.05rem;
   line-height: 1.7;
+}
+
+.article-body .article-image {
+  margin-right: auto;
+  margin-left: auto;
+  max-width: 34rem;
+}
+
+.article-body .article-image img {
+  width: 100%;
+  border: 1px solid rgb(8 45 72 / 10%);
+  border-radius: 1.5rem;
+  background: white;
+  box-shadow: 0 1.5rem 3rem rgb(8 45 72 / 10%);
+}
+
+.article-body .article-image img[src*='/images/inst_'] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.article-body .article-image figcaption {
+  margin-top: 0.8rem;
+  color: rgb(8 45 72 / 58%);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-align: center;
 }
 </style>

@@ -23,6 +23,8 @@ An **important** paragraph with a [source](https://example.com).
 > [!NOTE] Remember
 > A useful takeaway.
 
+![A settings screen](/images/settings.png "Open the relevant setting.")
+
 ## Main section
 
 ### Steps
@@ -40,6 +42,7 @@ An **important** paragraph with a [source](https://example.com).
     expect(article.sections[0]?.blocks?.map((block) => block.type)).toEqual([
       'paragraph',
       'callout',
+      'image',
     ])
     expect(article.sections[0]?.blocks?.[0]).toEqual({
       type: 'paragraph',
@@ -50,6 +53,12 @@ An **important** paragraph with a [source](https://example.com).
         { text: 'source', href: 'https://example.com' },
         '.',
       ],
+    })
+    expect(article.sections[0]?.blocks?.[2]).toEqual({
+      type: 'image',
+      src: '/images/settings.png',
+      alt: 'A settings screen',
+      caption: 'Open the relevant setting.',
     })
     expect(article.sections[1]?.blocks?.map((block) => block.type)).toEqual([
       'heading',

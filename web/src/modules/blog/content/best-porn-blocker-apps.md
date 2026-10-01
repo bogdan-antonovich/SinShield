@@ -25,7 +25,7 @@ Prices below were checked on September 30, 2026. Promotions, regional pricing, a
 
 | App or service | Best for | Main blocking method | Platforms | Starting price |
 | --- | --- | --- | --- | --- |
-| SinShield | Private protection on Android | Adult-site blocking plus supported-app image covering | Android 11+ | Free |
+| SinShield | Private protection on Android | Adult-site blocking plus supported-app image covering | Android | Free |
 | Canopy | Broad cross-platform filtering | Real-time web filtering and custom rules | Android, iOS, Windows, Mac, Chromebook | $99.99/year for 1 device |
 | Covenant Eyes | Blocking with human accountability | Domain filtering plus activity shared with an Ally | Android, iOS, Windows, Mac | $18/month |
 | BlockerX | Blocking apps, sites, and keywords | VPN, accessibility, SafeSearch, and custom rules | Android; other versions vary | Free download; paid features |
@@ -58,7 +58,7 @@ SinShield analyzes visible frames inside supported apps on the Android device an
 - **On-device privacy:** screen-image classification stays on the phone, with no SinShield account or accountability report.
 - **In-app interruption:** screen-level protection currently covers imagery inside Instagram and X, where an ordinary domain filter cannot selectively block one post.
 
-**Where it falls short:** SinShield works only on Android 11 and newer, while its screen-level protection currently focuses on Instagram and X rather than every app. The website layer occupies Android's single VPN slot, permissions and protection can be disabled, the domain list can miss a new or unclassified site, and automated image detection can miss unsafe material or cover a safe image. It has no parent dashboard, protected change-approval workflow, or human accountability reports.
+**Where it falls short:** SinShield works only on Android, while its screen-level protection currently focuses on Instagram and X rather than every app. The website layer occupies Android's single VPN slot, permissions and protection can be disabled, the domain list can miss a new or unclassified site, and automated image detection can miss unsafe material or cover a safe image. It has no parent dashboard, protected change-approval workflow, or human accountability reports.
 
 > [!NOTE] Bottom line
 > Choose SinShield when the important device is Android and you want free, private protection for adult sites and supported feeds without another person monitoring you.
@@ -176,7 +176,7 @@ A blocker should reduce access without making you believe the underlying problem
 
 ### What is the best free porn blocker app?
 
-SinShield is the best free option in this comparison for an Android 11+ phone because it combines adult-site blocking with on-device image covering in supported apps without an account. CleanBrowsing is the better free choice for DNS filtering across a home network, but it cannot inspect content inside an allowed domain.
+SinShield is the best free option in this comparison for an Android phone because it combines adult-site blocking with on-device image covering in supported apps without an account. CleanBrowsing is the better free choice for DNS filtering across a home network, but it cannot inspect content inside an allowed domain.
 
 ### Can a porn blocker cover every app and website?
 
@@ -204,6 +204,6 @@ Yes. Consumer blockers can be disabled, removed, misconfigured, or bypassed thro
 
 ## Where to start
 
-Write down the device and the shortest route you use to reach explicit content, then compare the two products in this guide that most directly cover it. If the route is an Android 11+ phone and private protection fits your needs, [try SinShield](/products/android) and test it against the sites and supported apps that matter to you.
+Write down the device and the shortest route you use to reach explicit content, then compare the two products in this guide that most directly cover it. If the route is an Android phone and private protection fits your needs, [try SinShield](/products/android) and test it against the sites and supported apps that matter to you.
 
 Then test the route that matters, not only the app's welcome screen. If the remaining gap is an iPhone, computer, unsupported app, or the absence of another person, choose the product in this guide that performs that specific job rather than assuming one blocker can close every door.

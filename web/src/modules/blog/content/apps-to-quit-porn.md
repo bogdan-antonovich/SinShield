@@ -50,7 +50,7 @@ A porn blocker interrupts websites, searches, apps, or visible content so that a
 
 [SinShield](/products/android), which is our product, is free and designed for an adult who wants protection on an Android phone without an account or reports sent to another person. It blocks known adult domains through a local VPN and analyzes visible imagery on the device inside supported versions of Instagram and X, covering content classified as explicit or suggestive.
 
-The important privacy difference is that screen frames stay on the phone and are discarded after analysis. The important limitation is that SinShield works only on Android 11 and newer, its in-app layer does not cover every app, permissions can be revoked, and it cannot provide the human follow-up that an accountability service creates.
+The important privacy difference is that screen frames stay on the phone and are discarded after analysis. The important limitation is that SinShield works only on Android, its in-app layer does not cover every app, permissions can be revoked, and it cannot provide the human follow-up that an accountability service creates.
 
 **Best for:** private friction on one Android phone, particularly when unwanted content arrives through both adult sites and supported social feeds.
 

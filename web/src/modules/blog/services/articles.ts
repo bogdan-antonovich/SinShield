@@ -30,7 +30,6 @@ const articleMetaTitles: Record<string, string> = {
   'countries-where-porn-is-illegal': 'Where Is Porn Illegal? Country Laws Explained',
   'does-porn-lower-your-iq': 'Does Porn Lower Your IQ? Research Explained',
   'how-to-break-the-scroll-trigger-loop': 'How to Break the Scroll–Trigger Loop',
-  'porn-on-x': 'Porn on X: Rules, Filters, and How to Block It',
 }
 
 export function getArticleMetaTitle(article: Article): string {
