@@ -31,10 +31,10 @@ const currentYear = new Date().getFullYear()
             aria-label="SinShield home"
           >
             <span
-              class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 sm:size-16"
+              class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-lg shadow-black/15 sm:size-16"
             >
               <img
-                src="/sinshield-thumbnail.png"
+                src="/sinshield-thumbnail.png?v=2"
                 alt=""
                 class="size-full object-cover"
                 aria-hidden="true"

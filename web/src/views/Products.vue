@@ -10,9 +10,9 @@ import StepsSection from '@/modules/products/components/StepsSection.vue';
 defineOptions({ name: 'ProductsView' })
 
 usePageMetadata({
-  title: 'Adult Content Blocker for Android | SinShield',
+  title: 'SinShield Products | Choose Your Platform',
   description:
-    'Get SinShield for Android: private screen-level adult-content covering and website blocking with no account or uploaded screenshots.',
+    'Choose a platform to see where SinShield is available and find the setup and download options for your device.',
   path: '/products',
   image: '/sinshield-thumbnail.jpg',
 })

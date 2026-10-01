@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="The Private Frame logo concept">
+  <g fill="none" stroke="#087CF0" stroke-width="24" stroke-linecap="round">
+    <path d="M190 94h-54a42 42 0 0 0-42 42v54M322 94h54a42 42 0 0 1 42 42v54M94 322v54a42 42 0 0 0 42 42h54M418 322v54a42 42 0 0 1-42 42h-54"/>
+  </g>
+  <rect x="164" y="164" width="184" height="184" rx="48" fill="#E5EFFF"/>
+  <path fill="#082D48" d="M164 260h184v40c0 26.5-21.5 48-48 48h-88c-26.5 0-48-21.5-48-48v-40Z"/>
+  <circle cx="214" cy="214" r="20" fill="#087CF0"/>
+</svg>

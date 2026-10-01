@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="The Quiet Barrier logo concept">
+  <circle cx="128" cy="256" r="40" fill="#087CF0"/>
+  <path fill="none" stroke="#082D48" stroke-width="30" stroke-linecap="round" d="M286 112c-52 70-52 218 0 288"/>
+  <path fill="none" stroke="#087CF0" stroke-width="24" stroke-linecap="round" d="M170 256h70M310 160c44 18 72 54 78 96-6 42-34 78-78 96"/>
+</svg>

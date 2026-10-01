@@ -5,7 +5,7 @@ description: "Reduce sexual and suggestive content on Instagram with Sensitive C
 author: "SinShield Editorial"
 publishedAt: 2026-10-01
 readingTime: "11 min read"
-thumbnail: "/images/socialmedia.jpg"
+thumbnail: "/images/instagram.jpg"
 thumbnailAlt: "A phone with a blurred social feed beside a small paper shield"
 tags: ["Social media","Instagram","Porn blocking"]
 ---

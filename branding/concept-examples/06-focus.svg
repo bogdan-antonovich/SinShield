@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="The Focus logo concept">
+  <g fill="#087CF0">
+    <circle cx="116" cy="138" r="22"/><rect x="366" y="104" width="46" height="46" rx="12" transform="rotate(14 389 127)"/>
+    <path d="m105 361 29-42 29 42-29 20Z"/><circle cx="392" cy="374" r="18"/>
+  </g>
+  <circle cx="256" cy="256" r="116" fill="none" stroke="#E5EFFF" stroke-width="34"/>
+  <circle cx="256" cy="256" r="72" fill="#082D48"/>
+  <path fill="none" stroke="#087CF0" stroke-width="22" stroke-linecap="round" d="M213 256l28 28 58-63"/>
+</svg>
