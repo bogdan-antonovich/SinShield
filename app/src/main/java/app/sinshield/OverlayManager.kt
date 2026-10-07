@@ -80,6 +80,7 @@ internal class OverlayManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val failOpenWatchdog = OverlayFailOpenWatchdog(mainHandler)
     private val blockingOverlayExpirations = mutableMapOf<View, Runnable>()
+    private val dismissButtonReveals = mutableMapOf<View, Runnable>()
     private val activeIncidents = mutableSetOf<IncidentId>()
 
     /** Read-only handle so recovery can inspect the current full-screen block without owning it. */
@@ -185,6 +186,7 @@ internal class OverlayManager(
         if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         appBlockingOverlay = AppBlockingOverlay(app, view, incident, mode)
         updateFailOpenWatchdog()
+        armDismissButtonReveal(view)
         armMaximumLifetime(view) {
             dismissAppBlockingOverlay(view, incident, actions)
         }
@@ -269,7 +271,6 @@ internal class OverlayManager(
 
     private fun configureDebugControls(view: View, resetFeedback: Boolean) {
         val feedbackEnabled = DebugSettings.overlayFeedback(context)
-        view.findViewById<View>(R.id.dismiss_overlay).visibility = View.VISIBLE
         view.findViewById<TextView>(R.id.feedback_prompt).visibility =
             if (feedbackEnabled) View.VISIBLE else View.GONE
         if (feedbackEnabled) {
@@ -348,6 +349,7 @@ internal class OverlayManager(
         val overlay = appBlockingOverlay ?: return
         appBlockingOverlay = null
         if (cooldownView === overlay.view) cooldownView = null
+        cancelDismissButtonReveal(overlay.view)
         cancelMaximumLifetime(overlay.view)
         removeViewOrTerminate(overlay.view, "full-screen app block")
         updateFailOpenWatchdog()
@@ -373,6 +375,7 @@ internal class OverlayManager(
         if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         siteBlockingOverlay = SiteBlockingOverlay(packageName, domain, view)
         updateFailOpenWatchdog()
+        armDismissButtonReveal(view)
         armMaximumLifetime(view) {
             dismissSiteBlockingOverlay(view, actions)
         }
@@ -389,6 +392,7 @@ internal class OverlayManager(
     fun clearSiteBlockingOverlay() {
         val overlay = siteBlockingOverlay ?: return
         siteBlockingOverlay = null
+        cancelDismissButtonReveal(overlay.view)
         cancelMaximumLifetime(overlay.view)
         removeViewOrTerminate(overlay.view, "website block")
         updateFailOpenWatchdog()
@@ -409,6 +413,7 @@ internal class OverlayManager(
         onCopyDomain: (() -> Unit)? = null,
         actionLabel: String? = null,
         onAction: (() -> Unit)? = null,
+        onEndSetupGuide: () -> Unit,
         messageRevealDelayMs: Long = 0L,
         useSavedPosition: Boolean = true
     ) {
@@ -421,6 +426,7 @@ internal class OverlayManager(
             existing.findViewById<TextView>(R.id.preview_bubble_message).text = message
             configurePreviewBubbleDomain(existing, domainText, onCopyDomain)
             configurePreviewBubbleAction(existing, actionLabel, onAction)
+            configurePreviewBubbleEndSetup(existing, onEndSetupGuide)
             setPreviewBubbleCollapsed(existing, collapsed = false, animate = true)
             return
         }
@@ -429,6 +435,7 @@ internal class OverlayManager(
         view.findViewById<TextView>(R.id.preview_bubble_message).text = message
         configurePreviewBubbleDomain(view, domainText, onCopyDomain)
         configurePreviewBubbleAction(view, actionLabel, onAction)
+        configurePreviewBubbleEndSetup(view, onEndSetupGuide)
         installPreviewBubbleGesture(view)
         val params = previewBubbleLayoutParams(
             useSavedPosition = useSavedPosition && messageRevealDelayMs == 0L
@@ -516,6 +523,15 @@ internal class OverlayManager(
                 visibility = View.VISIBLE
                 setOnClickListener { onAction() }
             }
+        }
+    }
+
+    private fun configurePreviewBubbleEndSetup(
+        view: View,
+        onEndSetupGuide: () -> Unit
+    ) {
+        view.findViewById<Button>(R.id.preview_bubble_end_setup).setOnClickListener {
+            onEndSetupGuide()
         }
     }
 
@@ -685,12 +701,14 @@ internal class OverlayManager(
         if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
         previewBlockingView = view
         updateFailOpenWatchdog()
+        armDismissButtonReveal(view)
         armMaximumLifetime(view, ::clearPreviewBlock)
     }
 
     fun clearPreviewBlock() {
         val view = previewBlockingView ?: return
         previewBlockingView = null
+        cancelDismissButtonReveal(view)
         cancelMaximumLifetime(view)
         removeViewOrTerminate(view, "setup preview block")
         updateFailOpenWatchdog()
@@ -975,6 +993,23 @@ internal class OverlayManager(
         blockingOverlayExpirations.remove(view)?.let(mainHandler::removeCallbacks)
     }
 
+    /** Keeps only the direct overlay escape hidden; all recovery actions retain their own timing. */
+    private fun armDismissButtonReveal(view: View) {
+        cancelDismissButtonReveal(view)
+        val dismissButton = view.findViewById<View>(R.id.dismiss_overlay)
+        dismissButton.visibility = View.INVISIBLE
+        val reveal = Runnable {
+            dismissButtonReveals.remove(view)
+            if (isTrackedBlockingOverlay(view)) dismissButton.visibility = View.VISIBLE
+        }
+        dismissButtonReveals[view] = reveal
+        mainHandler.postDelayed(reveal, DISMISS_BUTTON_REVEAL_DELAY_MS)
+    }
+
+    private fun cancelDismissButtonReveal(view: View) {
+        dismissButtonReveals.remove(view)?.let(mainHandler::removeCallbacks)
+    }
+
     private fun isTrackedBlockingOverlay(view: View): Boolean =
         appBlockingOverlay?.view === view ||
             siteBlockingOverlay?.view === view ||
@@ -995,6 +1030,8 @@ internal class OverlayManager(
     }
 
     fun shutdown() {
+        dismissButtonReveals.values.forEach(mainHandler::removeCallbacks)
+        dismissButtonReveals.clear()
         blockingOverlayExpirations.values.forEach(mainHandler::removeCallbacks)
         blockingOverlayExpirations.clear()
         failOpenWatchdog.shutdown()
@@ -1008,6 +1045,7 @@ internal class OverlayManager(
         private const val UNKNOWN_WINDOW_ID = -1
         private const val RECOVERY_ACTION_REST_SECONDS = 5
         private const val RECOVERY_ACTION_REST_MS = RECOVERY_ACTION_REST_SECONDS * 1_000L
+        internal const val DISMISS_BUTTON_REVEAL_DELAY_MS = 12_000L
         internal const val MAX_BLOCKING_OVERLAY_LIFETIME_MS = 60_000L
         private const val MAX_SIMULTANEOUS_OVERLAYS = 3
         private const val OVERLAY_MATCH_IOU = 0.45f

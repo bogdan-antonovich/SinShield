@@ -5,6 +5,7 @@
     <string name="accessibility_disclosure_body">SinShield needs Android\'s Accessibility service to protect you. Here is exactly what that means:\n\n• SinShield reads what is on your screen so it can find explicit images and cover them instantly.\n• All of this analysis happens on your device using on-device models.\n• SinShield does not collect, store, or transmit the content of your screen, and it does not share it with anyone.\n\nOn the next screen, Android will ask you to enable SinShield. You can turn it off again at any time in Accessibility settings.</string>
     <string name="accessibility_disclosure_accept">I understand, continue</string>
     <string name="accessibility_disclosure_cancel">Not now</string>
+    <string name="end_setup_guide">End setup guide</string>
     <string name="privacy_policy_link">Privacy Policy</string>
     <string name="privacy_policy_url" translatable="false">https://sinshield.app/privacy-policy</string>
     <string name="terms_and_conditions_link">Terms &amp; Conditions</string>

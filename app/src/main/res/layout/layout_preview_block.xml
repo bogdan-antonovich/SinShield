@@ -20,7 +20,8 @@
         android:gravity="center"
         android:text="@string/close_symbol"
         android:textColor="@color/sinshield_navy"
-        android:textSize="32sp" />
+        android:textSize="32sp"
+        android:visibility="invisible" />
 
     <LinearLayout
         android:layout_width="match_parent"

@@ -1914,7 +1914,7 @@ private fun PermissionExplanationCard(
             enabled = cancelEnabled,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
         ) {
-            Text("Leave setup guide", color = MutedInk)
+            Text("End setup guide", color = MutedInk)
         }
     }
 }
@@ -1946,7 +1946,7 @@ private fun PreviewReadyOverlay(
             onMessageVisibilityChanged = { messageVisible = it }
         ) {
             PreviewPrimaryButton("Continue", onContinue)
-            PreviewSecondaryButton("Leave setup guide", onCancel)
+            PreviewSecondaryButton("End setup guide", onCancel)
         }
     }
 }
@@ -1988,7 +1988,7 @@ private fun PreviewUiTourIntroOverlay(
             onMessageVisibilityChanged = { messageVisible = it }
         ) {
             PreviewPrimaryButton("Show me around", onContinue)
-            PreviewSecondaryButton("Leave setup guide", onCancel)
+            PreviewSecondaryButton("End setup guide", onCancel)
         }
     }
 }
@@ -2023,7 +2023,7 @@ private fun PreviewInProgressScreen(
         emphasizedPhrases
     ) {
         PreviewPrimaryButton("Return to browser", onResume)
-        PreviewSecondaryButton("Leave setup guide", onCancel)
+        PreviewSecondaryButton("End setup guide", onCancel)
     }
 }
 
@@ -2083,8 +2083,11 @@ private fun RobotGuideMessage(
         onMessageVisibilityChanged(messageVisible)
     }
     val entrance = remember(title) { Animatable(if (animateEntrance) 420f else 0f) }
-    LaunchedEffect(title, animateEntrance) {
-        if (animateEntrance) {
+    LaunchedEffect(title) {
+        // Position reporting changes animateEntrance as soon as the robot is laid out. That must
+        // not restart this effect: doing so cancels animateTo and strands the message off-screen
+        // at its partially completed horizontal offset.
+        if (entrance.value != 0f) {
             entrance.animateTo(0f, tween(420, easing = FastOutSlowInEasing))
         }
         if (!showMessageImmediately) {

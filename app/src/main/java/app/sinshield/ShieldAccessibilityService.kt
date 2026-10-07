@@ -595,6 +595,7 @@ class ShieldAccessibilityService : AccessibilityService() {
                 message = "This is the same website protection screen you’ll see when SinShield " +
                     "blocks an adult-content website. It stops the site before it loads and gives " +
                     "you a way out.",
+                onEndSetupGuide = ::endSetupGuide,
                 messageRevealDelayMs = OVERLAY_GUIDE_MESSAGE_DELAY_MS
             )
         }
@@ -637,7 +638,8 @@ class ShieldAccessibilityService : AccessibilityService() {
                 message = "Let’s test website protection. Go to this website in your browser. Tap " +
                     "copy, then paste it into the address bar, or simply type it there.",
                 domainText = ProtectionPreviewRepository.TEST_URL,
-                onCopyDomain = { ProtectionPreviewRepository.armSiteBlockTest(this) }
+                onCopyDomain = { ProtectionPreviewRepository.armSiteBlockTest(this) },
+                onEndSetupGuide = ::endSetupGuide
             )
             ProtectionPreviewStage.WAITING_CARS_SEARCH -> overlays.showPreviewInstruction(
                 message = "Now I’ll show you screen protection. While you browse X or Instagram, " +
@@ -647,10 +649,12 @@ class ShieldAccessibilityService : AccessibilityService() {
                     "can do afterward. Search Google for “cars”. Tap copy, then paste it into the " +
                     "search box.",
                 domainText = "cars",
-                onCopyDomain = {}
+                onCopyDomain = {},
+                onEndSetupGuide = ::endSetupGuide
             )
             ProtectionPreviewStage.WAITING_IMAGES -> overlays.showPreviewInstruction(
-                "Great—now select Images in the Google results."
+                message = "Great—now select Images in the Google results.",
+                onEndSetupGuide = ::endSetupGuide
             )
             ProtectionPreviewStage.IMAGE_EXPLANATION ->
                 scheduleOverlayGuide(ProtectionPreviewStage.IMAGE_EXPLANATION) {
@@ -669,6 +673,7 @@ class ShieldAccessibilityService : AccessibilityService() {
                 "move past the content, or close the app.",
             actionLabel = "Continue",
             onAction = ::continueAfterPreviewImageBlock,
+            onEndSetupGuide = ::endSetupGuide,
             messageRevealDelayMs = SCREEN_PROTECTION_MESSAGE_DELAY_MS
         )
     }
@@ -718,12 +723,22 @@ class ShieldAccessibilityService : AccessibilityService() {
         }
         overlays.showPreviewInstruction(
             message = message,
+            onEndSetupGuide = ::endSetupGuide,
             // The service starts only after Accessibility is enabled. Its first appearance in
             // Android Settings should therefore use Shieldbot's predictable default corner,
             // regardless of where the user dragged it during an earlier guide step.
             useSavedPosition = ProtectionPreviewRepository.stage(this) !=
                 ProtectionPreviewStage.ACCESSIBILITY
         )
+    }
+
+    private fun endSetupGuide() {
+        scheduledOverlayGuideStage = null
+        previewInspectionGeneration++
+        ProtectionPreviewRepository.maybeLater(this)
+        overlays.clearPreviewOverlays()
+        overlays.clearSiteBlockingOverlay()
+        recovery.clearAppBlock()
     }
 
     private fun isPreviewBrowser(packageName: String?): Boolean =
