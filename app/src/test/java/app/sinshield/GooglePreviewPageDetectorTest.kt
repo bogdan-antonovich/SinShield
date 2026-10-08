@@ -42,6 +42,36 @@ class GooglePreviewPageDetectorTest {
     }
 
     @Test
+    fun `blocked dns domain must belong to visible page`() {
+        val google = BrowserPageEvidence(
+            editableTexts = listOf("cars"),
+            selectedTexts = emptyList(),
+            addressBarTexts = listOf("https://www.google.com/search?q=cars"),
+            visibleTexts = listOf("Google")
+        )
+
+        assertFalse(
+            PreviewBrowserPageDetector.isAtBlockedDomain(google, "blocked-background.test")
+        )
+        assertTrue(PreviewBrowserPageDetector.isAtBlockedDomain(google, "google.com"))
+        assertTrue(PreviewBrowserPageDetector.isAtBlockedDomain(google, "www.google.com"))
+    }
+
+    @Test
+    fun `blocked dns subdomain belongs to visible parent page`() {
+        val evidence = BrowserPageEvidence(
+            editableTexts = emptyList(),
+            selectedTexts = emptyList(),
+            addressBarTexts = listOf("https://adult-site.test/watch"),
+            visibleTexts = emptyList()
+        )
+
+        assertTrue(
+            PreviewBrowserPageDetector.isAtBlockedDomain(evidence, "cdn.adult-site.test")
+        )
+    }
+
+    @Test
     fun `recognizes requested google search`() {
         val evidence = BrowserPageEvidence(
             editableTexts = listOf("example.com"),

@@ -6,18 +6,15 @@ import org.junit.Test
 
 class PreviewScrollTest {
     @Test
-    fun `does not scroll when accessibility row is fully visible`() {
+    fun `visible accessibility row is aligned to leave room for guide card`() {
         val destination = accessibilityPreviewScrollDestination(
             currentScroll = 400,
             maxScroll = 1_500,
             targetTop = 120f,
-            targetBottom = 260f,
-            viewportHeight = 800f,
-            desiredTop = 32f,
-            viewportMargin = 40f
+            desiredTop = 32f
         )
 
-        assertNull(destination)
+        assertEquals(488, destination)
     }
 
     @Test
@@ -26,10 +23,7 @@ class PreviewScrollTest {
             currentScroll = 900,
             maxScroll = 1_500,
             targetTop = -180f,
-            targetBottom = -40f,
-            viewportHeight = 800f,
-            desiredTop = 32f,
-            viewportMargin = 40f
+            desiredTop = 32f
         )
 
         assertEquals(688, destination)
@@ -41,10 +35,7 @@ class PreviewScrollTest {
             currentScroll = 100,
             maxScroll = 1_500,
             targetTop = 920f,
-            targetBottom = 1_060f,
-            viewportHeight = 800f,
-            desiredTop = 32f,
-            viewportMargin = 40f
+            desiredTop = 32f
         )
 
         assertEquals(988, destination)
@@ -56,12 +47,21 @@ class PreviewScrollTest {
             currentScroll = 400,
             maxScroll = 1_500,
             targetTop = 20f,
-            targetBottom = 160f,
-            viewportHeight = 800f,
-            desiredTop = 32f,
-            viewportMargin = 40f
+            desiredTop = 32f
         )
 
         assertEquals(388, destination)
+    }
+
+    @Test
+    fun `does not scroll when accessibility row is already aligned`() {
+        val destination = accessibilityPreviewScrollDestination(
+            currentScroll = 488,
+            maxScroll = 1_500,
+            targetTop = 32f,
+            desiredTop = 32f
+        )
+
+        assertNull(destination)
     }
 }

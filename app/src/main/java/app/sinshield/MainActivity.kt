@@ -704,12 +704,7 @@ fun MainScreen(
                     currentScroll = previousScroll,
                     maxScroll = mainScrollState.maxValue,
                     targetTop = targetTop,
-                    targetBottom = targetBottom,
-                    viewportHeight = previewRootSize.height.toFloat(),
-                    desiredTop = with(mainDensity) { PreviewFirstRowTop.toPx() },
-                    viewportMargin = with(mainDensity) {
-                        (PreviewViewportMargin + PreviewFocusPadding + PreviewFocusPulse).toPx()
-                    }
+                    desiredTop = with(mainDensity) { PreviewFirstRowTop.toPx() }
                 )
             } else {
                 null
@@ -1479,7 +1474,8 @@ private fun PreviewFinishedOverlay(modifier: Modifier, onDone: () -> Unit) {
                 "don’t need to keep SinShield open.\n\n" +
                 "• Your protection will stay on in the background.\n" +
                 "• Adult websites stay blocked in your browser.\n" +
-                "• Sexual content can be covered while you use X and Instagram.\n\n" +
+                "• Sexual content can be covered on supported Chrome webpages and while you " +
+                "use X and Instagram.\n\n" +
                 "Return anytime to check your streak or adjust your protection settings.",
             emphasizedPhrases = listOf(
                 "Your protection will stay on",

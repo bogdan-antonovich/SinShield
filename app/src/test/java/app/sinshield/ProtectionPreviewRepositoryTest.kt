@@ -32,18 +32,22 @@ class ProtectionPreviewRepositoryTest {
     }
 
     @Test
-    fun `typing or browser prefetch does not arm the test domain`() {
-        assertFalse(
+    fun `website step temporarily blocks only NeverSSL`() {
+        assertTrue(
             ProtectionPreviewRepository.shouldTemporarilyBlock(context, "neverssl.com")
+        )
+        assertTrue(
+            ProtectionPreviewRepository.shouldTemporarilyBlock(context, "www.neverssl.com.")
+        )
+        assertFalse(ProtectionPreviewRepository.shouldTemporarilyBlock(context, "google.com"))
+        assertFalse(ProtectionPreviewRepository.shouldTemporarilyBlock(context, "example.com"))
+        assertFalse(
+            ProtectionPreviewRepository.shouldTemporarilyBlock(context, "notneverssl.com")
         )
     }
 
     @Test
-    fun `parallel dns requests remain blocked after copying the test domain`() {
-        ProtectionPreviewRepository.armSiteBlockTest(context)
-        assertTrue(
-            ProtectionPreviewRepository.shouldTemporarilyBlock(context, "neverssl.com")
-        )
+    fun `test domain stays blocked until the real overlay is ready`() {
         assertTrue(ProtectionPreviewRepository.recordSiteBlocked(context))
 
         assertTrue(
@@ -53,11 +57,15 @@ class ProtectionPreviewRepositoryTest {
             ProtectionPreviewRepository.shouldTemporarilyBlock(context, "www.neverssl.com.")
         )
         assertFalse(ProtectionPreviewRepository.recordSiteBlocked(context))
+
+        ProtectionPreviewRepository.releaseSiteBlockTest(context)
+        assertFalse(
+            ProtectionPreviewRepository.shouldTemporarilyBlock(context, "neverssl.com")
+        )
     }
 
     @Test
     fun `test domain is released after continuing the preview`() {
-        ProtectionPreviewRepository.armSiteBlockTest(context)
         ProtectionPreviewRepository.recordSiteBlocked(context)
         ProtectionPreviewRepository.moveTo(context, ProtectionPreviewStage.WAITING_CARS_SEARCH)
 

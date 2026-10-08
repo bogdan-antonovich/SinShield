@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -22,6 +23,10 @@ import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.SocketTimeoutException
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -32,6 +37,7 @@ class AdultContentVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private var worker: Thread? = null
     @Volatile private var matcher = AdultDomainMatcher.empty()
+    @Volatile private var upstreamNetwork: Network? = null
     private var upstreamServers: List<InetAddress> = emptyList()
     private val packetIdentification = AtomicInteger(1)
     private val recentlyReported = LinkedHashMap<String, Long>()
@@ -113,6 +119,7 @@ class AdultContentVpnService : VpnService() {
     private fun establishTunnel() {
         val connectivity = getSystemService(ConnectivityManager::class.java)
         val underlyingNetwork = connectivity.activeNetwork
+        upstreamNetwork = underlyingNetwork
         // Reuse the real network's resolvers so answers match what the user would get without the
         // VPN. Exclude our own virtual DNS address so a forwarded query can never loop back in.
         val networkDns = connectivity.getLinkProperties(underlyingNetwork)
@@ -133,6 +140,7 @@ class AdultContentVpnService : VpnService() {
             .addDnsServer(VPN_DNS_ADDRESS)
             .addRoute(VPN_DNS_ADDRESS, 32)
             .setBlocking(true)
+        underlyingNetwork?.let { builder.setUnderlyingNetworks(arrayOf(it)) }
         // Keep SinSheld's own traffic out of the tunnel so forwarding sockets reach the network
         // directly rather than recursing through this service.
         runCatching { builder.addDisallowedApplication(packageName) }
@@ -165,6 +173,15 @@ class AdultContentVpnService : VpnService() {
 
         val input = FileInputStream(descriptor.fileDescriptor)
         val output = FileOutputStream(descriptor.fileDescriptor)
+        val forwarders = ThreadPoolExecutor(
+            DNS_FORWARDER_THREADS,
+            DNS_FORWARDER_THREADS,
+            0L,
+            TimeUnit.MILLISECONDS,
+            ArrayBlockingQueue(DNS_FORWARDER_QUEUE_CAPACITY),
+            { runnable -> Thread(runnable, "SinSheld-DNS-Upstream").apply { isDaemon = true } },
+            ThreadPoolExecutor.AbortPolicy()
+        )
         val packetBuffer = ByteArray(32_767)
         try {
 
@@ -181,31 +198,26 @@ class AdultContentVpnService : VpnService() {
                             } == true
                             val blocked = previewBlock || queryName?.let(matcher::isBlocked) == true
 
-                            val dnsResponse = if (blocked) {
-                                if (previewBlock) {
-                                    // A tutorial block must not leave a negative DNS cache behind.
-                                    // SERVFAIL demonstrates the interruption while allowing a
-                                    // normal lookup immediately after the user continues the preview.
-                                    DnsMessageCodec.serverFailureResponse(request.payload)
-                                } else {
-                                    DnsMessageCodec.nxdomainResponse(request.payload)
+                            if (blocked) {
+                                // A tutorial hit and an adult-domain hit intentionally share the
+                                // same DNS response. Only their matching-rule lifetime differs.
+                                DnsMessageCodec.nxdomainResponse(request.payload)?.let {
+                                    reportBlockedDomain(queryName, previewBlock)
+                                    writeDnsResponse(descriptor, output, request, it)
                                 }
                             } else {
-                                forward(request.payload)
-                            }
-
-                            dnsResponse?.let { responsePayload ->
-                                if (blocked) {
-                                    reportBlockedDomain(queryName, previewBlock)
+                                try {
+                                    forwarders.execute {
+                                        forward(request.payload)?.let {
+                                            writeDnsResponse(descriptor, output, request, it)
+                                        }
+                                    }
+                                } catch (_: RejectedExecutionException) {
+                                    Log.w(TAG, "DNS forwarding queue is full; failing one request")
+                                    DnsMessageCodec.serverFailureResponse(request.payload)?.let {
+                                        writeDnsResponse(descriptor, output, request, it)
+                                    }
                                 }
-
-                                val response = Ipv4UdpPacketCodec.response(
-                                    request,
-                                    responsePayload,
-                                    packetIdentification.getAndIncrement()
-                                )
-
-                                output.write(response)
                             }
                         }
                 }
@@ -213,11 +225,29 @@ class AdultContentVpnService : VpnService() {
         } catch (failure: Throwable) {
             if (tunnel != null) Log.w(TAG, "DNS packet loop stopped", failure)
         } finally {
+            forwarders.shutdownNow()
             runCatching { input.close() }
             runCatching { output.close() }
             // stopVpn clears the tunnel before interrupting the thread. If it is still present,
             // the packet loop ended unexpectedly and website protection is no longer functional.
             handler.post { packetLoopEnded(descriptor) }
+        }
+    }
+
+    private fun writeDnsResponse(
+        descriptor: ParcelFileDescriptor,
+        output: FileOutputStream,
+        request: Ipv4UdpDatagram,
+        payload: ByteArray
+    ) {
+        if (tunnel !== descriptor) return
+        val response = Ipv4UdpPacketCodec.response(
+            request,
+            payload,
+            packetIdentification.getAndIncrement()
+        )
+        synchronized(output) {
+            if (tunnel === descriptor) output.write(response)
         }
     }
 
@@ -250,7 +280,11 @@ class AdultContentVpnService : VpnService() {
         for (server in upstreamServers) {
             try {
                 DatagramSocket().use { socket ->
-                    if (!protect(socket)) return@use
+                    if (!protect(socket)) {
+                        Log.w(TAG, "Could not exempt an upstream DNS socket from the VPN")
+                        return@use
+                    }
+                    upstreamNetwork?.bindSocket(socket)
 
                     socket.soTimeout = DNS_TIMEOUT_MS
                     socket.send(
@@ -265,7 +299,7 @@ class AdultContentVpnService : VpnService() {
                     return response.copyOf(packet.length)
                 }
             } catch (_: SocketTimeoutException) {
-                // Try next server
+                Log.w(TAG, "DNS forwarding timed out via ${server.hostAddress}")
             } catch (failure: Exception) {
                 Log.w(
                     TAG,
@@ -427,6 +461,8 @@ class AdultContentVpnService : VpnService() {
         private const val MTU = 1_500
         private const val DNS_PORT = 53
         private const val DNS_TIMEOUT_MS = 1_500
+        private const val DNS_FORWARDER_THREADS = 8
+        private const val DNS_FORWARDER_QUEUE_CAPACITY = 64
         private const val MAX_DNS_RESPONSE_BYTES = 4_096
         private const val REPORT_COOLDOWN_MS = 4_000L
         private const val MAX_RECENT_REPORTS = 256

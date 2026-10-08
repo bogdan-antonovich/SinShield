@@ -61,6 +61,7 @@ class ShieldAccessibilityService : AccessibilityService() {
     private val previewExecutor: ExecutorService =
         newBackgroundSingleThreadExecutor("SinSheld-Preview")
     private var previewInspectionGeneration = 0L
+    private var blockedSiteValidationGeneration = 0L
     private var scheduledOverlayGuideStage: ProtectionPreviewStage? = null
 
     private lateinit var recovery: RecoveryController
@@ -762,21 +763,56 @@ class ShieldAccessibilityService : AccessibilityService() {
         val insideBrowserWebContent: Boolean
     )
 
-    /** Shows a browser-specific shield only when a blocked DNS request came from the foreground. */
-    private fun showBlockedSiteOverlay(domain: String) {
+    /**
+     * Shows a browser-specific shield only when the blocked DNS name belongs to the visible URL.
+     * A browser can resolve blocked hosts for background tabs and page assets, so foreground app
+     * identity alone is not enough evidence to cover what the user is currently viewing.
+     */
+    private fun showBlockedSiteOverlay(domain: String, attempt: Int = 0) {
         val browserPackage = foregroundPackage?.takeIf { it in KnownBrowsers.packages } ?: run {
             Log.d(TAG, "Blocked DNS request had no foreground browser; overlay suppressed")
             return
         }
-        val existing = overlays.siteOverlay
-        if (existing?.packageName == browserPackage) {
-            existing.domain = domain
-            return
-        }
-        overlays.clearSiteBlockingOverlay()
-        clearLocalizedOverlays()
-        overlays.showSiteBlock(browserPackage, domain, siteBlockActions)
-        cancelScheduledScan()
+        val generation = if (attempt == 0) ++blockedSiteValidationGeneration
+        else blockedSiteValidationGeneration
+        handler.postDelayed({
+            if (generation != blockedSiteValidationGeneration ||
+                foregroundPackage != browserPackage
+            ) {
+                return@postDelayed
+            }
+            previewExecutor.execute {
+                val evidence = collectBrowserPageEvidence(browserPackage)
+                handler.post {
+                    if (generation != blockedSiteValidationGeneration ||
+                        foregroundPackage != browserPackage
+                    ) {
+                        return@post
+                    }
+                    if (!PreviewBrowserPageDetector.isAtBlockedDomain(evidence, domain)) {
+                        if (attempt < BLOCKED_SITE_VALIDATION_MAX_RETRIES) {
+                            showBlockedSiteOverlay(domain, attempt + 1)
+                        } else {
+                            Log.d(
+                                TAG,
+                                "Blocked DNS request did not match the visible browser URL; " +
+                                    "overlay suppressed"
+                            )
+                        }
+                        return@post
+                    }
+                    val existing = overlays.siteOverlay
+                    if (existing?.packageName == browserPackage) {
+                        existing.domain = domain
+                        return@post
+                    }
+                    overlays.clearSiteBlockingOverlay()
+                    clearLocalizedOverlays()
+                    overlays.showSiteBlock(browserPackage, domain, siteBlockActions)
+                    cancelScheduledScan()
+                }
+            }
+        }, if (attempt == 0) 0L else BLOCKED_SITE_VALIDATION_RETRY_MS)
     }
 
     private fun showPreviewSiteOverlay(attempt: Int) {
@@ -793,6 +829,10 @@ class ShieldAccessibilityService : AccessibilityService() {
             }
             return
         }
+        // The VPN has now produced the same DNS block used for a real blocked website and the
+        // foreground browser is ready for its overlay. Remove only the tutorial's NeverSSL rule;
+        // no other domain is added to or removed from the user's protection list.
+        ProtectionPreviewRepository.releaseSiteBlockTest(this)
         overlays.showSiteBlock(
             packageName = browserPackage,
             domain = ProtectionPreviewRepository.TEST_DOMAIN,
@@ -850,9 +890,10 @@ class ShieldAccessibilityService : AccessibilityService() {
                 onEndSetupGuide = ::endSetupGuide
             )
             ProtectionPreviewStage.WAITING_CARS_SEARCH -> overlays.showPreviewInstruction(
-                message = "Now I’ll show you screen protection. While you browse X or Instagram, " +
-                    "SinShield checks the visible screen on your device. If it detects sexual " +
-                    "content, it covers the screen so the content is no longer visible.\n\n" +
+                message = "Now I’ll show you screen protection. While you browse supported pages " +
+                    "in Chrome, X, or Instagram, SinShield checks the visible screen on your " +
+                    "device. If it detects sexual content, it covers the screen so the content " +
+                    "is no longer visible.\n\n" +
                     "This next step will show you what that interruption looks like and what you " +
                     "can do afterward. Search Google for “cars”. Tap copy, then paste it into the " +
                     "search box.",
@@ -874,11 +915,12 @@ class ShieldAccessibilityService : AccessibilityService() {
 
     private fun showImageProtectionGuide() {
         overlays.showPreviewInstruction(
-            message = "This is screen protection. It works while you browse X and Instagram. " +
-                "When SinShield detects sexual content on the display, it covers the whole screen " +
-                "immediately so the content is no longer visible. The five-second pause gives you " +
-                "a moment before the recovery choices appear. You can then return to the feed, " +
-                "move past the content, or close the app.",
+            message = "This is screen protection. It works on supported webpages in Chrome and " +
+                "while you browse X and Instagram. When SinShield detects sexual content on the " +
+                "display, it covers the whole screen immediately so the content is no longer " +
+                "visible. The five-second pause gives you a moment before the recovery choices " +
+                "appear. In Chrome, you can go back or open a safe page. In X and Instagram, you " +
+                "can return to the feed, move past the content, or close the app.",
             actionLabel = "Continue",
             onAction = ::continueAfterPreviewImageBlock,
             onEndSetupGuide = ::endSetupGuide,
@@ -1184,9 +1226,11 @@ class ShieldAccessibilityService : AccessibilityService() {
         private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
         private const val EVENT_NOTIFICATION_TIMEOUT_MS = 100L
         private const val EVENT_METRICS_INTERVAL_MS = 30_000L
-        private const val PREVIEW_INSPECTION_DELAY_MS = 700L
+        private const val PREVIEW_INSPECTION_DELAY_MS = 250L
         private const val PREVIEW_SITE_OVERLAY_RETRY_MS = 300L
         private const val PREVIEW_SITE_OVERLAY_MAX_RETRIES = 10
+        private const val BLOCKED_SITE_VALIDATION_RETRY_MS = 200L
+        private const val BLOCKED_SITE_VALIDATION_MAX_RETRIES = 5
         private const val MIN_MEDIA_AREA_PERCENT = 4
         private const val MAX_MEDIA_AREA_PERCENT = 90
         private const val MIN_MEDIA_WIDTH_PERCENT = 25

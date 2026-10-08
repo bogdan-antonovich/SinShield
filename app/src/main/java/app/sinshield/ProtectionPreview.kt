@@ -135,9 +135,11 @@ internal object ProtectionPreviewRepository {
     fun moveTo(context: Context, stage: ProtectionPreviewStage) {
         preferences(context).edit {
             putString(STAGE, stage.name)
-            if (stage != ProtectionPreviewStage.WAITING_SITE_BLOCK &&
-                stage != ProtectionPreviewStage.SITE_EXPLANATION
-            ) {
+            if (stage == ProtectionPreviewStage.WAITING_SITE_BLOCK) {
+                // The tutorial adds exactly one temporary DNS rule. Arming it before the browser
+                // step means both copying and typing the address exercise the real VPN block path.
+                putBoolean(SITE_BLOCK_ARMED, true)
+            } else if (stage != ProtectionPreviewStage.SITE_EXPLANATION) {
                 remove(SITE_BLOCK_ARMED)
             }
         }
@@ -150,11 +152,17 @@ internal object ProtectionPreviewRepository {
         preferences(context).edit { putBoolean(SITE_BLOCK_ARMED, true) }
     }
 
+    /** Removes the tutorial-only DNS rule after the real website-block overlay is on screen. */
+    fun releaseSiteBlockTest(context: Context) {
+        preferences(context).edit { remove(SITE_BLOCK_ARMED) }
+    }
+
     fun maybeLater(context: Context) {
         preferences(context).edit {
             putString(STAGE, ProtectionPreviewStage.IDLE.name)
             putLong(OFFER_AFTER, System.currentTimeMillis() + DAY_MS)
             remove(PREVIEW_STARTED_AT)
+            remove(SITE_BLOCK_ARMED)
         }
         broadcast(context)
     }
@@ -165,6 +173,7 @@ internal object ProtectionPreviewRepository {
             putString(STAGE, ProtectionPreviewStage.IDLE.name)
             remove(OFFER_AFTER)
             remove(PREVIEW_STARTED_AT)
+            remove(SITE_BLOCK_ARMED)
         }
         broadcast(context)
     }
@@ -175,6 +184,7 @@ internal object ProtectionPreviewRepository {
             putString(STAGE, ProtectionPreviewStage.IDLE.name)
             remove(OFFER_AFTER)
             remove(PREVIEW_STARTED_AT)
+            remove(SITE_BLOCK_ARMED)
         }
         broadcast(context)
     }
@@ -231,6 +241,7 @@ internal object ProtectionPreviewRepository {
                 putString(STAGE, ProtectionPreviewStage.IDLE.name)
                 putLong(OFFER_AFTER, System.currentTimeMillis() + DAY_MS)
                 remove(PREVIEW_STARTED_AT)
+                remove(SITE_BLOCK_ARMED)
             }
         }
     }
@@ -252,20 +263,40 @@ internal data class BrowserPageEvidence(
 
 internal object PreviewBrowserPageDetector {
     fun isAtDomain(evidence: BrowserPageEvidence, domain: String): Boolean {
-        val expected = domain.trim().trimEnd('.').lowercase()
-        return evidence.addressBarTexts.any { value ->
-            val host = value
-                .trim()
-                .lowercase()
-                .removePrefix("http://")
-                .removePrefix("https://")
-                .substringBefore('/')
-                .substringBefore('?')
-                .substringBefore('#')
-                .substringBefore(':')
-                .trimEnd('.')
+        val expected = normalizeHost(domain)
+        return expected != null && evidence.addressBarTexts.any { value ->
+            val host = normalizeHost(value)
             host == expected || host == "www.$expected"
         }
+    }
+
+    /**
+     * DNS traffic is device-wide and may belong to an ad, image, or background tab. A website
+     * block is relevant to the visible page only when its address-bar host is the queried domain,
+     * a subdomain of it, or its parent (for example example.com and www.example.com).
+     */
+    fun isAtBlockedDomain(evidence: BrowserPageEvidence, blockedDomain: String): Boolean {
+        val blockedHost = normalizeHost(blockedDomain) ?: return false
+        return evidence.addressBarTexts.any { value ->
+            val visibleHost = normalizeHost(value) ?: return@any false
+            visibleHost == blockedHost ||
+                visibleHost.endsWith(".$blockedHost") ||
+                blockedHost.endsWith(".$visibleHost")
+        }
+    }
+
+    private fun normalizeHost(value: String): String? {
+        val host = value
+            .trim()
+            .lowercase()
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+            .substringBefore(':')
+            .trimEnd('.')
+        return host.takeIf { it.isNotBlank() && '.' in it && ' ' !in it }
     }
 }
 
