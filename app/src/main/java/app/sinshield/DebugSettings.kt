@@ -11,7 +11,7 @@ import androidx.core.content.edit
  * and production-like builds even when the local switch is accidentally left on.
  */
 internal object GlobalDebugMode {
-    private const val LOCAL_ENABLED = true
+    private const val LOCAL_ENABLED = false
     val ENABLED: Boolean = BuildConfig.DEBUG && LOCAL_ENABLED
 }
 
