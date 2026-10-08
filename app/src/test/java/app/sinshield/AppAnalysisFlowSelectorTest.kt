@@ -1,7 +1,6 @@
 package app.sinshield
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,6 +19,10 @@ class AppAnalysisFlowSelectorTest {
             AppAnalysisFlowKind.REDDIT,
             AppAnalysisFlowSelector.select(ShieldedApp.REDDIT.packageName)
         )
+        assertEquals(
+            AppAnalysisFlowKind.BROWSER,
+            AppAnalysisFlowSelector.select(SupportedBrowsers.CHROME)
+        )
     }
 
     @Test
@@ -34,19 +37,4 @@ class AppAnalysisFlowSelectorTest {
         )
     }
 
-    @Test
-    fun localizedStageOnlyRunsAfterASafeWholeScreen() {
-        assertTrue(
-            LocalizedStageGate.shouldRun(
-                StageOneResult(ContentVerdict.SAFE, ContentVerdict.SAFE, emptyList())
-            )
-        )
-        ContentVerdict.entries.filterNot { it == ContentVerdict.SAFE }.forEach { verdict ->
-            assertFalse(
-                LocalizedStageGate.shouldRun(
-                    StageOneResult(verdict, ContentVerdict.EXPLICIT, listOf("test"))
-                )
-            )
-        }
-    }
 }

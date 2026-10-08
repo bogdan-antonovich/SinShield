@@ -32,6 +32,7 @@ internal class FrameScanner(
     private val handler: Handler,
     private val overlays: OverlayManager,
     private val appBlockActions: OverlayManager.AppBlockActions,
+    private val browserContentBlockActions: OverlayManager.BrowserContentBlockActions,
     private val collectAccessibilityContext: (ShieldedApp?) -> ScanAccessibilityContext,
     private val host: Host
 ) {
@@ -670,6 +671,15 @@ internal class FrameScanner(
                 )
                 logBanTiming(context, verdict, timing, provisional = true, mode = mode)
             }
+        } else if (SupportedBrowsers.contains(context.packageName)) {
+            preparePendingFeedback(context, analysis, incident, verdict, diagnostics)
+            overlays.showBrowserContentBlock(
+                context.packageName,
+                incident,
+                verdict,
+                browserContentBlockActions
+            )
+            logBanTiming(context, verdict, timing, provisional = true)
         } else {
             overlays.showLocalizedBlockingOverlays(
                 incident,
@@ -731,6 +741,15 @@ internal class FrameScanner(
                 overlays.showAppBlockingOverlay(shieldedApp, incident, verdict, mode, appBlockActions)
                 logBanTiming(context, verdict, timing, provisional = false, mode = mode)
             }
+        } else if (SupportedBrowsers.contains(context.packageName)) {
+            preparePendingFeedback(context, analysis, incident, verdict, diagnostics)
+            overlays.showBrowserContentBlock(
+                context.packageName,
+                incident,
+                verdict,
+                browserContentBlockActions
+            )
+            logBanTiming(context, verdict, timing, provisional = false)
         } else {
             overlays.showLocalizedBlockingOverlays(
                 incident,

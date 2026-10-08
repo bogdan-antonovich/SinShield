@@ -200,6 +200,39 @@
 
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/browser_recovery_actions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/browser_open_safe_page"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/leave_site_and_open_safe_page"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/browser_go_back"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_overlay_button_primary"
+                android:backgroundTint="@null"
+                android:text="@string/go_back"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 </FrameLayout>

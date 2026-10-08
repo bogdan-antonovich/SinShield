@@ -551,6 +551,15 @@ internal class OpenCvMediaRegionDetector(
                 maxRegions = 18,
                 inferInstagramLayouts = true
             )
+            val BROWSER = Config(
+                // Web galleries commonly align media with either edge of the viewport.
+                allowHorizontalFrameEdges = true,
+                // The browser planner rejects page-sized wrappers. Keep this detector focused on
+                // individual media rectangles and allow enough results for a two-column gallery.
+                maxAreaRatio = 0.60,
+                maxRegions = 16,
+                inferInstagramLayouts = false
+            )
         }
     }
 

@@ -13,29 +13,15 @@ internal class InstagramAnalysisFlow(
 ) : AppAnalysisFlow {
     override fun analyze(input: AppAnalysisInput): FrameAnalysis {
         val wholeScreen = fullScreenAnalyzer.analyze(input)
-        // A decisive whole-screen EXPLICIT verdict is terminal: localized scores can only agree with
-        // it, never overturn it, so skip scoring the detected crops entirely. Any softer verdict
-        // still runs localized, because Instagram's diluted whole-screen score is exactly what the
-        // per-region pass exists to catch.
-        val localized = if (wholeScreen.result.verdict == ContentVerdict.EXPLICIT) {
-            LocalizedDetection.EMPTY
-        } else {
-            val regions = localizedAnalyzer.planRegions(
-                input.bitmap,
-                input.debugSession,
-                LocalizedAnalysisContext(
-                    accessibilityMediaRegions = input.accessibilityMediaRegions,
-                    screenMode = input.screenMode,
-                    screenSignals = input.screenSignals
-                )
+        return finalizer.finishIncrementally(
+            input = input,
+            wholeScreen = wholeScreen,
+            localizedAnalyzer = localizedAnalyzer,
+            context = LocalizedAnalysisContext(
+                accessibilityMediaRegions = input.accessibilityMediaRegions,
+                screenMode = input.screenMode,
+                screenSignals = input.screenSignals
             )
-            localizedAnalyzer.classifyRegions(
-                input.bitmap,
-                regions,
-                input.settings.thresholds,
-                input.debugSession
-            )
-        }
-        return finalizer.finish(input, wholeScreen, localized)
+        )
     }
 }

@@ -1147,7 +1147,7 @@ fun MainScreen(
                 )
                 SettingsRow(
                     "Photo dumps",
-                    "Save model crops and OpenCV diagnostics to the app's Pictures folder",
+                    "Save captured screens, media-region maps, and model crops to the app's Pictures folder",
                     debugPhotoDumps,
                     R.drawable.ic_visibility_off,
                     {
@@ -1157,7 +1157,7 @@ fun MainScreen(
                 ) {
                     details = SettingDetails(
                         "Photo dumps",
-                        "Writes classifier inputs, verifier inputs, region maps, and OpenCV diagnostics. Image encoding runs during analysis and can make scans substantially slower."
+                        "Writes captured browser screens, classifier inputs, verifier inputs, and visual or accessibility media-region maps. Image encoding runs during analysis and can make scans substantially slower."
                     )
                 }
                 AppDivider()

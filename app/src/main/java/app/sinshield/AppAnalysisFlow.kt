@@ -6,7 +6,6 @@ import android.util.Log
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -31,6 +30,7 @@ internal enum class AppAnalysisFlowKind {
     X,
     INSTAGRAM,
     REDDIT,
+    BROWSER,
     FULL_SCREEN_ONLY
 }
 
@@ -40,14 +40,9 @@ internal object AppAnalysisFlowSelector {
         ShieldedApp.X.packageName -> AppAnalysisFlowKind.X
         ShieldedApp.INSTAGRAM.packageName -> AppAnalysisFlowKind.INSTAGRAM
         ShieldedApp.REDDIT.packageName -> AppAnalysisFlowKind.REDDIT
+        in SupportedBrowsers.packages -> AppAnalysisFlowKind.BROWSER
         else -> AppAnalysisFlowKind.FULL_SCREEN_ONLY
     }
-}
-
-/** The localized stage is a fallback for content diluted in an otherwise-safe whole screen. */
-internal object LocalizedStageGate {
-    fun shouldRun(wholeScreen: StageOneResult): Boolean =
-        wholeScreen.verdict == ContentVerdict.SAFE
 }
 
 /**
@@ -65,10 +60,15 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
         modelAsset = CLASSIFIER_MODEL_ASSET,
         detectorConfig = OpenCvMediaRegionDetector.Config.INSTAGRAM,
         regionPlanner = InstagramLocalizedRegionPlanner,
-        // Instagram draws a full-screen block, not per-region covers, so one actionable region is
-        // enough to decide the frame — stop scoring the rest of the grid as soon as it is found.
-        stopAfterFirstActionable = true,
         saveFinalRegionMap = true
+    )
+    private val browserLocalizedAnalyzer: LocalizedAnalyzer = AsyncOpenCvLocalizedAnalyzer(
+        context = context,
+        modelAsset = CLASSIFIER_MODEL_ASSET,
+        detectorConfig = OpenCvMediaRegionDetector.Config.BROWSER,
+        regionPlanner = BrowserLocalizedRegionPlanner,
+        saveFinalRegionMap = true,
+        detectVisualRegions = true
     )
     private val finalizer = AnalysisFinalizer(CandidateVerifier(context, VERIFIER_MODEL_ASSET))
 
@@ -87,6 +87,10 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
         localizedAnalyzer,
         finalizer
     )
+    private val browserFlow: AppAnalysisFlow = BrowserAnalysisFlow(
+        browserLocalizedAnalyzer,
+        finalizer
+    )
     private val fullScreenOnlyFlow: AppAnalysisFlow = FullScreenOnlyAnalysisFlow(
         fullScreenAnalyzer,
         finalizer
@@ -98,6 +102,7 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
         AppAnalysisFlowKind.X -> xFlow.analyze(input)
         AppAnalysisFlowKind.INSTAGRAM -> instagramFlow.analyze(input)
         AppAnalysisFlowKind.REDDIT -> redditFlow.analyze(input)
+        AppAnalysisFlowKind.BROWSER -> browserFlow.analyze(input)
         AppAnalysisFlowKind.FULL_SCREEN_ONLY -> fullScreenOnlyFlow.analyze(input)
     }
 
@@ -110,6 +115,7 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
     val warmUpComplete: Boolean get() = finalizer.warmUpComplete
 
     override fun close() {
+        browserLocalizedAnalyzer.close()
         instagramLocalizedAnalyzer.close()
         localizedAnalyzer.close()
         fullScreenAnalyzer.close()
@@ -120,6 +126,45 @@ internal class AppAnalysisFlowRegistry(context: Context) : AutoCloseable {
         private const val TAG = "SinSheld"
         private const val CLASSIFIER_MODEL_ASSET = "nsfw_mobilenet_v2.tflite"
         private const val VERIFIER_MODEL_ASSET = "nsfw_marqo_vit_tiny_384.onnx"
+    }
+}
+
+/**
+ * Browser chrome and page text make full-frame classification meaningless. Exact Chrome media
+ * nodes are preferred; visual rectangles subdivide inaccessible gallery wrappers when necessary.
+ * Only the planner's final media crops enter the classifier and verifier.
+ */
+internal class BrowserAnalysisFlow(
+    private val localizedAnalyzer: LocalizedAnalyzer,
+    private val finalizer: AnalysisFinalizer
+) : AppAnalysisFlow {
+    override fun analyze(input: AppAnalysisInput): FrameAnalysis {
+        input.debugSession?.saveBrowserCapturedScreen(
+            source = input.bitmap,
+            packageName = input.packageName,
+            accessibilityRegionCount = input.accessibilityMediaRegions.size
+        )
+        input.debugSession?.saveBrowserAccessibilityRegionMap(
+            source = input.bitmap,
+            regions = input.accessibilityMediaRegions
+        )
+        return finalizer.finishIncrementally(
+            input = input,
+            wholeScreen = SAFE_WHOLE_SCREEN,
+            localizedAnalyzer = localizedAnalyzer,
+            context = LocalizedAnalysisContext(
+                accessibilityMediaRegions = input.accessibilityMediaRegions,
+                screenMode = ShieldedScreenMode.UNKNOWN,
+                screenSignals = ScreenSignals.EMPTY
+            )
+        )
+    }
+
+    private companion object {
+        val SAFE_WHOLE_SCREEN = WholeScreenAnalysis(
+            scores = floatArrayOf(1f, 0f, 0f, 0f, 0f),
+            result = StageOneResult(ContentVerdict.SAFE, ContentVerdict.SAFE, emptyList())
+        )
     }
 }
 
@@ -166,11 +211,75 @@ internal class FullScreenAnalyzer(context: Context, modelAsset: String) : AutoCl
 }
 
 /** Shared result construction and verifier policy used after an app flow finishes its stages. */
-internal class AnalysisFinalizer(private val verifier: CandidateVerifier) : AutoCloseable {
+internal class AnalysisFinalizer(private val verifier: CandidateVerificationEngine) : AutoCloseable {
+    /**
+     * Applies the final verifier before abandoning the remaining localized regions. A primary-model
+     * false positive is retained in region diagnostics but cannot stop the scan or contaminate the
+     * next candidate's policy scores. The first candidate whose final verdict is unsafe wins.
+     */
+    fun finishIncrementally(
+        input: AppAnalysisInput,
+        wholeScreen: WholeScreenAnalysis,
+        localizedAnalyzer: LocalizedAnalyzer,
+        context: LocalizedAnalysisContext = LocalizedAnalysisContext.EMPTY
+    ): FrameAnalysis {
+        val wholeScreenDecision = finish(
+            input,
+            wholeScreen,
+            LocalizedDetection.EMPTY,
+            verifierFileStem = "00-whole-verifier"
+        )
+        if (wholeScreenDecision.verdict != ContentVerdict.SAFE) return wholeScreenDecision
+
+        // A rejected whole-screen hint must not be allowed to veto every localized candidate again.
+        // Preserve its raw scores for diagnostics while making localized regions independent.
+        val localizedBaseline = if (wholeScreen.result.verdict == ContentVerdict.SAFE) {
+            wholeScreen
+        } else {
+            wholeScreen.copy(
+                result = StageOneResult(ContentVerdict.SAFE, ContentVerdict.SAFE, emptyList())
+            )
+        }
+        val regions = localizedAnalyzer.planRegions(input.bitmap, input.debugSession, context)
+        val inspectedScores = mutableListOf<RegionScore>()
+        for ((index, region) in regions.withIndex()) {
+            val localized = localizedAnalyzer.classifyRegions(
+                bitmap = input.bitmap,
+                regions = listOf(region),
+                thresholds = input.settings.thresholds,
+                debugSession = input.debugSession,
+                regionOrdinalOffset = index
+            )
+            inspectedScores += localized.regionScores
+            val decision = finish(
+                input,
+                localizedBaseline,
+                localized,
+                verifierFileStem = "${(index + 1).toString().padStart(2, '0')}-verifier"
+            )
+            if (decision.verdict != ContentVerdict.SAFE) {
+                return decision.copy(
+                    localized = decision.localized.copy(regionScores = inspectedScores.toList())
+                )
+            }
+        }
+        return finish(
+            input,
+            localizedBaseline,
+            LocalizedDetection(
+                boxes = emptyList(),
+                explicitScore = 0f,
+                semiNudeScore = 0f,
+                regionScores = inspectedScores.toList()
+            )
+        )
+    }
+
     fun finish(
         input: AppAnalysisInput,
         wholeScreen: WholeScreenAnalysis,
-        localized: LocalizedDetection
+        localized: LocalizedDetection,
+        verifierFileStem: String = "99-verifier"
     ): FrameAnalysis {
         val thresholds = input.settings.thresholds
         val candidatePolicy = ContentPolicy.combine(
@@ -188,7 +297,7 @@ internal class AnalysisFinalizer(private val verifier: CandidateVerifier) : Auto
         ) {
             null
         } else {
-            verifier.verify(input.bitmap, verifierBox, input.debugSession)
+            verifier.verify(input.bitmap, verifierBox, input.debugSession, verifierFileStem)
         }
         val scores = wholeScreen.scores
         return FrameAnalysis(
@@ -216,17 +325,30 @@ internal class AnalysisFinalizer(private val verifier: CandidateVerifier) : Auto
 }
 
 /** Lazy independent verifier shared by the app flows. */
-internal class CandidateVerifier(
-    private val context: Context,
-    private val modelAsset: String
-) : AutoCloseable {
-    private var verifier: NsfwVerifier? = null
-    private var unavailable = false
-
+internal interface CandidateVerificationEngine : AutoCloseable {
     fun verify(
         bitmap: Bitmap,
         candidate: DetectionBox?,
-        debugSession: ModelAnalysisDebugSession?
+        debugSession: ModelAnalysisDebugSession?,
+        debugFileStem: String = "99-verifier"
+    ): VerificationResult?
+
+    fun warmUp(sample: Bitmap): Boolean
+    val isReadyOrUnavailable: Boolean
+}
+
+internal class CandidateVerifier(
+    private val context: Context,
+    private val modelAsset: String
+) : CandidateVerificationEngine {
+    private var verifier: NsfwVerifier? = null
+    private var unavailable = false
+
+    override fun verify(
+        bitmap: Bitmap,
+        candidate: DetectionBox?,
+        debugSession: ModelAnalysisDebugSession?,
+        debugFileStem: String
     ): VerificationResult? {
         if (unavailable) return null
         return try {
@@ -236,6 +358,7 @@ internal class CandidateVerifier(
             }
             activeVerifier.verify(bitmap, candidate) { input, result ->
                 debugSession?.saveVerifierInput(
+                    fileStem = debugFileStem,
                     bitmap = input,
                     result = result,
                     details = if (candidate == null) {
@@ -254,7 +377,9 @@ internal class CandidateVerifier(
         }
     }
 
-    val isReadyOrUnavailable: Boolean get() = verifier != null || unavailable
+    override fun warmUp(sample: Bitmap): Boolean = verify(sample, null, null) != null
+
+    override val isReadyOrUnavailable: Boolean get() = verifier != null || unavailable
 
     override fun close() {
         runCatching { verifier?.close() }
@@ -290,7 +415,8 @@ internal interface LocalizedAnalyzer : AutoCloseable {
         bitmap: Bitmap,
         regions: List<DetectionRegion>,
         thresholds: DetectionThresholds,
-        debugSession: ModelAnalysisDebugSession?
+        debugSession: ModelAnalysisDebugSession?,
+        regionOrdinalOffset: Int = 0
     ): LocalizedDetection
 
     override fun close()
@@ -328,14 +454,14 @@ private object ExactOpenCvRegionPlanner : LocalizedAnalysisRegionPlanner {
     )
 }
 
-/** Runs exact OpenCV crops on independent interpreters and returns on the first actionable result. */
+/** Runs exact OpenCV crops on a bounded background worker pool. */
 internal class AsyncOpenCvLocalizedAnalyzer(
     context: Context,
     modelAsset: String,
     detectorConfig: OpenCvMediaRegionDetector.Config = OpenCvMediaRegionDetector.Config.DEFAULT,
     private val regionPlanner: LocalizedAnalysisRegionPlanner = ExactOpenCvRegionPlanner,
-    private val stopAfterFirstActionable: Boolean = true,
-    private val saveFinalRegionMap: Boolean = false
+    private val saveFinalRegionMap: Boolean = false,
+    private val detectVisualRegions: Boolean = true
 ) : LocalizedAnalyzer {
     private val visualMediaDetector = OpenCvMediaRegionDetector(
         config = detectorConfig,
@@ -383,11 +509,15 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         val regionsToAnalyze = regionPlanner.plan(
             bitmapWidth = bitmap.width,
             bitmapHeight = bitmap.height,
-            visualRegions = visualMediaDetector.detect(
-                bitmap,
-                inferInstagramGrid = InstagramLocalizedRegionPlanner.isGridSurface(context),
-                inferInstagramPost = InstagramLocalizedRegionPlanner.isPostSurface(context)
-            ),
+            visualRegions = if (detectVisualRegions) {
+                visualMediaDetector.detect(
+                    bitmap,
+                    inferInstagramGrid = InstagramLocalizedRegionPlanner.isGridSurface(context),
+                    inferInstagramPost = InstagramLocalizedRegionPlanner.isPostSurface(context)
+                )
+            } else {
+                emptyList()
+            },
             context = context
         )
         if (saveFinalRegionMap) {
@@ -400,37 +530,32 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         bitmap: Bitmap,
         regions: List<DetectionRegion>,
         thresholds: DetectionThresholds,
-        debugSession: ModelAnalysisDebugSession?
+        debugSession: ModelAnalysisDebugSession?,
+        regionOrdinalOffset: Int
     ): LocalizedDetection {
         if (regions.isEmpty()) return LocalizedDetection.EMPTY
 
-        val aborted = AtomicBoolean(false)
         val completion = ExecutorCompletionService<CompletedRegion>(workers)
         val frameWidth = bitmap.width
         val frameHeight = bitmap.height
         regions.forEachIndexed { index, region ->
             completion.submit {
-                if (aborted.get()) return@submit CompletedRegion.skipped(region)
                 // Allocate at worker execution time instead of queuing every crop up front. At most
                 // LOCALIZED_WORKERS crop bitmaps now coexist, even on an 18-region Instagram grid.
                 val crop = crop(bitmap, region)
                 try {
                     val classifier = classifiers.take()
                     try {
-                        if (aborted.get()) {
-                            CompletedRegion.skipped(region)
-                        } else {
-                            val scores = classifier.classify(crop)
-                            val verdict = localizedRegionVerdict(scores, thresholds)
-                            debugSession?.saveClassifierInput(
-                                fileStem = "${(index + 1).toString().padStart(2, '0')}-localized",
-                                bitmap = crop,
-                                scores = scores,
-                                verdict = verdict,
-                                details = formatDebugRegion(region, frameWidth, frameHeight)
-                            )
-                            CompletedRegion(region, scores)
-                        }
+                        val scores = classifier.classify(crop)
+                        val verdict = localizedRegionVerdict(scores, thresholds)
+                        debugSession?.saveClassifierInput(
+                            fileStem = "${(regionOrdinalOffset + index + 1).toString().padStart(2, '0')}-localized",
+                            bitmap = crop,
+                            scores = scores,
+                            verdict = verdict,
+                            details = formatDebugRegion(region, frameWidth, frameHeight)
+                        )
+                        CompletedRegion(region, scores)
                     } finally {
                         classifiers.put(classifier)
                     }
@@ -441,22 +566,13 @@ internal class AsyncOpenCvLocalizedAnalyzer(
         }
 
         val accumulated = MutableLocalizedDetection()
-        var earlyResult: LocalizedDetection? = null
         repeat(regions.size) {
             val completed = completion.take().get()
-            if (earlyResult != null) return@repeat
-            val scores = completed.scores ?: return@repeat
-            accumulated.add(completed.region, scores, thresholds)
-            if (stopAfterFirstActionable &&
-                accumulated.verdict(thresholds) != ContentVerdict.SAFE
-            ) {
-                aborted.set(true)
-                earlyResult = accumulated.snapshot()
-            }
+            accumulated.add(completed.region, completed.scores, thresholds)
         }
         // Drain every submitted task before returning: worker crops may share the source bitmap's
         // pixels, and FrameScanner recycles that source as soon as this analysis call completes.
-        return earlyResult ?: accumulated.snapshot()
+        return accumulated.snapshot()
     }
 
     private fun crop(bitmap: Bitmap, region: DetectionRegion): Bitmap {
@@ -478,12 +594,8 @@ internal class AsyncOpenCvLocalizedAnalyzer(
 
     private data class CompletedRegion(
         val region: DetectionRegion,
-        val scores: FloatArray?
-    ) {
-        companion object {
-            fun skipped(region: DetectionRegion) = CompletedRegion(region, null)
-        }
-    }
+        val scores: FloatArray
+    )
 
     private class MutableLocalizedDetection {
         private val boxes = mutableListOf<DetectionBox>()

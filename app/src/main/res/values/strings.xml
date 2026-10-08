@@ -70,6 +70,7 @@
     <string name="adult_website_blocked_explanation">SinShield stopped this adult-content website before it loaded. Go back or open a safe page to keep browsing.</string>
     <string name="leave_site_and_open_safe_page">Open a safe page</string>
     <string name="go_back">Go back</string>
+    <string name="browser_content_blocked_explanation">SinShield found sexual content on this webpage. Go back or open a safe page to keep browsing.</string>
     <plurals name="dismiss_available_in_seconds">
         <item quantity="one">Dismiss available in %d second</item>
         <item quantity="other">Dismiss available in %d seconds</item>

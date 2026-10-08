@@ -905,8 +905,11 @@ internal class RecoveryController(
     }
 
     fun leaveSiteAndOpenSafePage() {
-        val browserPackage = overlays.siteOverlay?.packageName ?: return
+        val browserPackage = overlays.siteOverlay?.packageName
+            ?: overlays.browserContentOverlay?.packageName
+            ?: return
         overlays.clearSiteBlockingOverlay()
+        overlays.clearBrowserContentBlock()
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         handler.postDelayed(
             {
@@ -927,9 +930,10 @@ internal class RecoveryController(
         )
     }
 
-    /** The site block's Back button: retire the shield, then send a single system Back. */
+    /** A browser block's Back button: retire either shield, then send a single system Back. */
     fun goBackFromSite() {
         overlays.clearSiteBlockingOverlay()
+        overlays.clearBrowserContentBlock()
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
     }
 

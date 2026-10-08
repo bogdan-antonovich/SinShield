@@ -96,6 +96,22 @@ class ShieldAccessibilityService : AccessibilityService() {
         override fun onGoBack() = recovery.goBackFromSite()
     }
 
+    private val browserContentBlockActions =
+        object : OverlayManager.BrowserContentBlockActions {
+            override fun onCooldownStarted() = scanner.cancelScheduledScan()
+            override fun onOpenSafePage() = recovery.leaveSiteAndOpenSafePage()
+            override fun onGoBack() = recovery.goBackFromSite()
+            override fun onDismiss(incident: IncidentId) = scanner.dismissIncident(incident)
+            override fun onFeedback(
+                incident: IncidentId,
+                disturbing: Boolean,
+                onComplete: (Boolean) -> Unit
+            ) {
+                scanner.recordFeedback(incident, disturbing, onComplete)
+                if (!disturbing) overlays.clearBrowserContentBlock()
+            }
+        }
+
     private val previewSiteBlockActions = object : OverlayManager.SiteBlockActions {
         override fun onOpenSafePage() = continueAfterPreviewSiteBlock()
         override fun onGoBack() = continueAfterPreviewSiteBlock()
@@ -115,9 +131,10 @@ class ShieldAccessibilityService : AccessibilityService() {
         ) = onComplete(true)
     }
 
-    // Browser packages remain available for DNS-site overlays, but do not enter screenshot
-    // monitoring while app protection is intentionally limited to Instagram and X.
-    private val monitoredPackages = socialPackages /* + browserPackages */
+    // Chrome is the first browser whose virtual accessibility media nodes SinShield supports.
+    // Other known browsers remain available for DNS-site overlays without implying screen-level
+    // compatibility merely because they use a related rendering engine.
+    private val monitoredPackages = socialPackages + SupportedBrowsers.packages
 
     private val blockedDomainReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -149,6 +166,7 @@ class ShieldAccessibilityService : AccessibilityService() {
             handler = handler,
             overlays = overlays,
             appBlockActions = appBlockActions,
+            browserContentBlockActions = browserContentBlockActions,
             collectAccessibilityContext = ::collectScanAccessibilityContext,
             host = object : FrameScanner.Host {
                 override fun syncForegroundFromRoot(): Boolean =
@@ -425,40 +443,77 @@ class ShieldAccessibilityService : AccessibilityService() {
         val screenWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1)
         val screenHeight = resources.displayMetrics.heightPixels.coerceAtLeast(1)
         val screenArea = screenWidth.toLong() * screenHeight
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val queue = ArrayDeque<AccessibilityTraversalNode>()
         val candidates = mutableListOf<DetectionRegion>()
-        queue.add(root)
+        val browserDirectCandidates = mutableListOf<DetectionRegion>()
+        val browserClickableFallbacks = mutableListOf<DetectionRegion>()
+        queue.add(AccessibilityTraversalNode(root, insideBrowserWebContent = false))
         var visited = 0
+        val browserPage = root.packageName?.toString() in SupportedBrowsers.packages
 
+        // Overlay reconciliation calls this traversal on the service thread. Keep its smaller cap;
+        // the scan-context traversal below performs Chrome's deeper walk on a capture worker.
         while (queue.isNotEmpty() && visited < MAX_ACCESSIBILITY_NODES) {
-            val node = queue.removeFirst()
+            val queuedNode = queue.removeFirst()
+            val node = queuedNode.node
             visited++
+            val className = node.className?.toString().orEmpty().lowercase()
+            val insideBrowserWebContent = queuedNode.insideBrowserWebContent ||
+                BrowserMediaNodeMatcher.isWebContentRoot(className)
             for (index in 0 until node.childCount) {
-                node.getChild(index)?.let(queue::addLast)
+                node.getChild(index)?.let { child ->
+                    queue.addLast(AccessibilityTraversalNode(child, insideBrowserWebContent))
+                }
             }
             if (!node.isVisibleToUser) continue
+            if (browserPage && !insideBrowserWebContent) continue
 
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             if (!bounds.intersect(0, 0, screenWidth, screenHeight)) continue
             val area = bounds.width().toLong() * bounds.height()
-            if (area < screenArea * MIN_MEDIA_AREA_PERCENT / 100L ||
-                area > screenArea * MAX_MEDIA_AREA_PERCENT / 100L ||
-                bounds.width() < screenWidth * MIN_MEDIA_WIDTH_PERCENT / 100 ||
-                bounds.height() < screenHeight * MIN_MEDIA_HEIGHT_PERCENT / 100
-            ) {
+            val usableBounds = if (browserPage) {
+                BrowserMediaBoundsPolicy.accepts(
+                    bounds.width(),
+                    bounds.height(),
+                    screenWidth,
+                    screenHeight
+                )
+            } else {
+                area >= screenArea * MIN_MEDIA_AREA_PERCENT / 100L &&
+                    area <= screenArea * MAX_MEDIA_AREA_PERCENT / 100L &&
+                    bounds.width() >= screenWidth * MIN_MEDIA_WIDTH_PERCENT / 100 &&
+                    bounds.height() >= screenHeight * MIN_MEDIA_HEIGHT_PERCENT / 100
+            }
+            if (!usableBounds) {
                 continue
             }
 
-            val className = node.className?.toString().orEmpty().lowercase()
             val description = node.contentDescription?.toString().orEmpty().lowercase()
             val viewId = node.viewIdResourceName.orEmpty().lowercase()
-            val likelyMedia = className.contains("imageview") ||
-                className.contains("textureview") ||
-                className.contains("surfaceview") ||
-                MEDIA_HINTS.any { it in description || it in viewId } ||
-                (node.childCount == 0 && description.isNotBlank())
-            if (!likelyMedia) continue
+            val browserMetadata = if (browserPage) node.chromiumMediaMetadata() else null
+            val browserDirectMedia = browserMetadata != null &&
+                BrowserMediaNodeMatcher.isDirectMedia(
+                    className,
+                    browserMetadata.chromeRole,
+                    browserMetadata.roleDescription,
+                    insideWebContent = insideBrowserWebContent
+                )
+            val browserMetadataMedia = browserMetadata?.hasImageInSubtree == true
+            val likelyMedia = if (browserPage) {
+                browserDirectMedia || browserMetadataMedia || BrowserMediaNodeMatcher.isLikelyMedia(
+                    className = className,
+                    contentDescription = description,
+                    viewId = viewId,
+                    hasImage = false
+                )
+            } else {
+                className.contains("imageview") ||
+                    className.contains("textureview") ||
+                    className.contains("surfaceview") ||
+                    MEDIA_HINTS.any { it in description || it in viewId } ||
+                    (node.childCount == 0 && description.isNotBlank())
+            }
 
             val region = DetectionRegion(
                 bounds.left.toFloat() / screenWidth,
@@ -467,18 +522,62 @@ class ShieldAccessibilityService : AccessibilityService() {
                 bounds.bottom.toFloat() / screenHeight,
                 source = DetectionRegionSource.ACCESSIBILITY
             )
-            if (candidates.none { normalizedIntersectionOverUnion(it, region) >= DUPLICATE_REGION_IOU }) {
-                candidates += region
+            if (likelyMedia) {
+                val mediaRegion = if (browserDirectMedia) {
+                    region.copy(source = DetectionRegionSource.BROWSER_DIRECT_MEDIA)
+                } else if (browserMetadataMedia) {
+                    region.copy(source = DetectionRegionSource.BROWSER_CHROME_METADATA)
+                } else {
+                    region
+                }
+                val destination = if (browserDirectMedia) browserDirectCandidates else candidates
+                if (destination.none {
+                        normalizedIntersectionOverUnion(it, mediaRegion) >= DUPLICATE_REGION_IOU
+                    }
+                ) {
+                    destination += mediaRegion
+                }
+            } else if (
+                browserPage &&
+                BrowserMediaBoundsPolicy.acceptsClickableContainer(
+                    bounds.width(),
+                    bounds.height(),
+                    screenWidth,
+                    screenHeight
+                ) &&
+                BrowserMediaNodeMatcher.isLikelyClickableMediaContainer(
+                    className,
+                    viewId,
+                    node.isClickable
+                ) &&
+                browserClickableFallbacks.none {
+                    normalizedIntersectionOverUnion(it, region) >= DUPLICATE_REGION_IOU
+                }
+            ) {
+                browserClickableFallbacks += region.copy(
+                    source = DetectionRegionSource.BROWSER_CLICKABLE_FALLBACK
+                )
             }
         }
 
-        val resultLimit = if (root.packageName?.toString() == ShieldedApp.INSTAGRAM.packageName) {
-            MAX_INSTAGRAM_MEDIA_REGIONS
+        val mediaCandidates = if (browserPage) {
+            BrowserMediaCandidateSelector.select(
+                directMedia = browserDirectCandidates,
+                metadataFallback = candidates,
+                clickableFallback = browserClickableFallbacks,
+                limit = MAX_BROWSER_MEDIA_REGIONS
+            )
         } else {
-            MAX_MEDIA_REGIONS
+            candidates
         }
-        return candidates
-            .sortedByDescending(DetectionRegion::area)
+
+        val resultLimit = when {
+            browserPage -> MAX_BROWSER_MEDIA_REGIONS
+            root.packageName?.toString() == ShieldedApp.INSTAGRAM.packageName ->
+                MAX_INSTAGRAM_MEDIA_REGIONS
+            else -> MAX_MEDIA_REGIONS
+        }
+        return mediaCandidates
             .take(resultLimit)
     }
 
@@ -491,17 +590,30 @@ class ShieldAccessibilityService : AccessibilityService() {
         val screenWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1)
         val screenHeight = resources.displayMetrics.heightPixels.coerceAtLeast(1)
         val screenArea = screenWidth.toLong() * screenHeight
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val queue = ArrayDeque<AccessibilityTraversalNode>()
         val candidates = mutableListOf<DetectionRegion>()
+        val browserDirectCandidates = mutableListOf<DetectionRegion>()
+        val browserClickableFallbacks = mutableListOf<DetectionRegion>()
         val labels = mutableListOf<String>()
         val viewIds = mutableListOf<String>()
-        queue.add(root)
+        queue.add(AccessibilityTraversalNode(root, insideBrowserWebContent = false))
         var visited = 0
+        val browserPage = root.packageName?.toString() in SupportedBrowsers.packages
+        val nodeLimit = if (browserPage) MAX_BROWSER_ACCESSIBILITY_NODES else MAX_ACCESSIBILITY_NODES
 
-        while (queue.isNotEmpty() && visited++ < MAX_ACCESSIBILITY_NODES) {
-            val node = queue.removeFirst()
-            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::addLast)
+        while (queue.isNotEmpty() && visited++ < nodeLimit) {
+            val queuedNode = queue.removeFirst()
+            val node = queuedNode.node
+            val className = node.className?.toString().orEmpty().lowercase()
+            val insideBrowserWebContent = queuedNode.insideBrowserWebContent ||
+                BrowserMediaNodeMatcher.isWebContentRoot(className)
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let { child ->
+                    queue.addLast(AccessibilityTraversalNode(child, insideBrowserWebContent))
+                }
+            }
             if (!node.isVisibleToUser) continue
+            if (browserPage && !insideBrowserWebContent) continue
 
             if (app != null) {
                 node.text?.toString()?.trim()?.lowercase()?.takeIf(String::isNotBlank)?.let(labels::add)
@@ -514,22 +626,47 @@ class ShieldAccessibilityService : AccessibilityService() {
             node.getBoundsInScreen(bounds)
             if (!bounds.intersect(0, 0, screenWidth, screenHeight)) continue
             val area = bounds.width().toLong() * bounds.height()
-            if (area < screenArea * MIN_MEDIA_AREA_PERCENT / 100L ||
-                area > screenArea * MAX_MEDIA_AREA_PERCENT / 100L ||
-                bounds.width() < screenWidth * MIN_MEDIA_WIDTH_PERCENT / 100 ||
-                bounds.height() < screenHeight * MIN_MEDIA_HEIGHT_PERCENT / 100
-            ) {
+            val usableBounds = if (browserPage) {
+                BrowserMediaBoundsPolicy.accepts(
+                    bounds.width(),
+                    bounds.height(),
+                    screenWidth,
+                    screenHeight
+                )
+            } else {
+                area >= screenArea * MIN_MEDIA_AREA_PERCENT / 100L &&
+                    area <= screenArea * MAX_MEDIA_AREA_PERCENT / 100L &&
+                    bounds.width() >= screenWidth * MIN_MEDIA_WIDTH_PERCENT / 100 &&
+                    bounds.height() >= screenHeight * MIN_MEDIA_HEIGHT_PERCENT / 100
+            }
+            if (!usableBounds) {
                 continue
             }
-            val className = node.className?.toString().orEmpty().lowercase()
             val description = node.contentDescription?.toString().orEmpty().lowercase()
             val viewId = node.viewIdResourceName.orEmpty().lowercase()
-            val likelyMedia = className.contains("imageview") ||
-                className.contains("textureview") ||
-                className.contains("surfaceview") ||
-                MEDIA_HINTS.any { it in description || it in viewId } ||
-                (node.childCount == 0 && description.isNotBlank())
-            if (!likelyMedia) continue
+            val browserMetadata = if (browserPage) node.chromiumMediaMetadata() else null
+            val browserDirectMedia = browserMetadata != null &&
+                BrowserMediaNodeMatcher.isDirectMedia(
+                    className,
+                    browserMetadata.chromeRole,
+                    browserMetadata.roleDescription,
+                    insideWebContent = insideBrowserWebContent
+                )
+            val browserMetadataMedia = browserMetadata?.hasImageInSubtree == true
+            val likelyMedia = if (browserPage) {
+                browserDirectMedia || browserMetadataMedia || BrowserMediaNodeMatcher.isLikelyMedia(
+                    className = className,
+                    contentDescription = description,
+                    viewId = viewId,
+                    hasImage = false
+                )
+            } else {
+                className.contains("imageview") ||
+                    className.contains("textureview") ||
+                    className.contains("surfaceview") ||
+                    MEDIA_HINTS.any { it in description || it in viewId } ||
+                    (node.childCount == 0 && description.isNotBlank())
+            }
 
             val region = DetectionRegion(
                 bounds.left.toFloat() / screenWidth,
@@ -538,25 +675,96 @@ class ShieldAccessibilityService : AccessibilityService() {
                 bounds.bottom.toFloat() / screenHeight,
                 source = DetectionRegionSource.ACCESSIBILITY
             )
-            if (candidates.none { normalizedIntersectionOverUnion(it, region) >= DUPLICATE_REGION_IOU }) {
-                candidates += region
+            if (likelyMedia) {
+                val mediaRegion = if (browserDirectMedia) {
+                    region.copy(source = DetectionRegionSource.BROWSER_DIRECT_MEDIA)
+                } else if (browserMetadataMedia) {
+                    region.copy(source = DetectionRegionSource.BROWSER_CHROME_METADATA)
+                } else {
+                    region
+                }
+                val destination = if (browserDirectMedia) browserDirectCandidates else candidates
+                if (destination.none {
+                        normalizedIntersectionOverUnion(it, mediaRegion) >= DUPLICATE_REGION_IOU
+                    }
+                ) {
+                    destination += mediaRegion
+                }
+            } else if (
+                browserPage &&
+                BrowserMediaBoundsPolicy.acceptsClickableContainer(
+                    bounds.width(),
+                    bounds.height(),
+                    screenWidth,
+                    screenHeight
+                ) &&
+                BrowserMediaNodeMatcher.isLikelyClickableMediaContainer(
+                    className,
+                    viewId,
+                    node.isClickable
+                ) &&
+                browserClickableFallbacks.none {
+                    normalizedIntersectionOverUnion(it, region) >= DUPLICATE_REGION_IOU
+                }
+            ) {
+                browserClickableFallbacks += region.copy(
+                    source = DetectionRegionSource.BROWSER_CLICKABLE_FALLBACK
+                )
             }
         }
 
-        val resultLimit = if (root.packageName?.toString() == ShieldedApp.INSTAGRAM.packageName) {
-            MAX_INSTAGRAM_MEDIA_REGIONS
+        val mediaCandidates = if (browserPage) {
+            BrowserMediaCandidateSelector.select(
+                directMedia = browserDirectCandidates,
+                metadataFallback = candidates,
+                clickableFallback = browserClickableFallbacks,
+                limit = MAX_BROWSER_MEDIA_REGIONS
+            )
         } else {
-            MAX_MEDIA_REGIONS
+            candidates
+        }
+
+        val resultLimit = when {
+            browserPage -> MAX_BROWSER_MEDIA_REGIONS
+            root.packageName?.toString() == ShieldedApp.INSTAGRAM.packageName ->
+                MAX_INSTAGRAM_MEDIA_REGIONS
+            else -> MAX_MEDIA_REGIONS
         }
         return ScanAccessibilityContext(
-            mediaRegions = candidates.sortedByDescending(DetectionRegion::area).take(resultLimit),
+            mediaRegions = mediaCandidates.take(resultLimit),
             screenSignals = if (app == null) ScreenSignals.EMPTY else ScreenSignals(labels, viewIds)
         )
     }
 
+    private fun AccessibilityNodeInfo.chromiumMediaMetadata(): ChromiumMediaMetadata {
+        val nodeExtras = extras
+        val hasImage = nodeExtras.getCharSequence(BrowserMediaNodeMatcher.EXTRA_HAS_IMAGE)
+            ?.toString()
+            ?.equals("true", ignoreCase = true) == true
+        val chromeRole = nodeExtras.getCharSequence(BrowserMediaNodeMatcher.EXTRA_CHROME_ROLE)
+            ?.toString()
+        val roleDescription = nodeExtras
+            .getCharSequence(BrowserMediaNodeMatcher.EXTRA_ROLE_DESCRIPTION)
+            ?.toString()
+        val supportsImageData = availableExtraData.contains(
+            BrowserMediaNodeMatcher.EXTRA_REQUEST_IMAGE_DATA
+        )
+        return ChromiumMediaMetadata(
+            hasImage = hasImage,
+            chromeRole = chromeRole,
+            roleDescription = roleDescription,
+            supportsImageData = supportsImageData
+        )
+    }
+
+    private data class AccessibilityTraversalNode(
+        val node: AccessibilityNodeInfo,
+        val insideBrowserWebContent: Boolean
+    )
+
     /** Shows a browser-specific shield only when a blocked DNS request came from the foreground. */
     private fun showBlockedSiteOverlay(domain: String) {
-        val browserPackage = foregroundPackage?.takeIf { it in browserPackages } ?: run {
+        val browserPackage = foregroundPackage?.takeIf { it in KnownBrowsers.packages } ?: run {
             Log.d(TAG, "Blocked DNS request had no foreground browser; overlay suppressed")
             return
         }
@@ -743,7 +951,7 @@ class ShieldAccessibilityService : AccessibilityService() {
 
     private fun isPreviewBrowser(packageName: String?): Boolean =
         packageName != null && (
-            packageName in browserPackages ||
+            packageName in KnownBrowsers.packages ||
                 packageName == ProtectionPreviewRepository.browserPackage(this)
             )
 
@@ -876,6 +1084,7 @@ class ShieldAccessibilityService : AccessibilityService() {
     /** Clears both the localized covers and the full-screen block, resetting recovery state. */
     private fun clearLocalizedOverlays() {
         overlays.clearLocalizedOverlaysOnly()
+        overlays.clearBrowserContentBlock()
         recovery.clearAppBlock()
     }
 
@@ -896,6 +1105,9 @@ class ShieldAccessibilityService : AccessibilityService() {
             ) {
                 recovery.clearAppBlock()
             }
+        }
+        overlays.browserContentOverlay?.let { overlay ->
+            if (overlay.packageName == packageName) overlays.clearBrowserContentBlock()
         }
         overlays.clearLocalizedOverlaysForPackage(packageName, windowId)
     }
@@ -965,7 +1177,9 @@ class ShieldAccessibilityService : AccessibilityService() {
         private const val ANDROID_PACKAGE = "android"
         private const val UNKNOWN_WINDOW_ID = -1
         private const val MAX_ACCESSIBILITY_NODES = 400
+        private const val MAX_BROWSER_ACCESSIBILITY_NODES = 1_200
         private const val MAX_MEDIA_REGIONS = 4
+        private const val MAX_BROWSER_MEDIA_REGIONS = 16
         private const val MAX_INSTAGRAM_MEDIA_REGIONS = 18
         private const val HEALTH_HEARTBEAT_INTERVAL_MS = 5L * 60L * 1_000L
         private const val EVENT_NOTIFICATION_TIMEOUT_MS = 100L
@@ -1019,15 +1233,6 @@ class ShieldAccessibilityService : AccessibilityService() {
             // "org.telegram.messenger",
         )
 
-        private val browserPackages = setOf(
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.microsoft.emmx",
-            "com.brave.browser",
-            "com.sec.android.app.sbrowser",
-            "com.opera.browser",
-            "com.opera.mini.native"
-        )
         private val ADDRESS_BAR_ID_HINTS = setOf(
             "url_bar",
             "location_bar",
@@ -1069,6 +1274,12 @@ internal data class SiteBlockingOverlay(
     val packageName: String,
     var domain: String,
     val view: View
+)
+
+internal data class BrowserContentBlockingOverlay(
+    val packageName: String,
+    val view: View,
+    var incident: IncidentId
 )
 
 internal data class DetectionBox(

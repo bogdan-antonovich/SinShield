@@ -17,6 +17,9 @@ internal data class DetectionRegion(
 
 internal enum class DetectionRegionSource {
     ACCESSIBILITY,
+    BROWSER_DIRECT_MEDIA,
+    BROWSER_CHROME_METADATA,
+    BROWSER_CLICKABLE_FALLBACK,
     VISUAL_MEDIA,
     ASPECT_FOCUS,
     VISUAL_FALLBACK,

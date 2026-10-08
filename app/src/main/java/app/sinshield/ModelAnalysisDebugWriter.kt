@@ -81,15 +81,66 @@ internal class ModelAnalysisDebugWriter(context: Context) {
 
 /** One frame's model inputs. Methods are synchronized because localized models finish in parallel. */
 internal class ModelAnalysisDebugSession(private val captureDirectory: File) {
+    /**
+     * Saves the unmodified screenshot before browser media bounds are applied. Chrome does not run
+     * the whole-screen classifier, so without this file its debug sequence would begin at the
+     * region map and there would be no record of the exact frame supplied by Android.
+     */
     @Synchronized
-    fun saveFinalRegionMap(source: Bitmap, regions: List<DetectionRegion>) {
+    fun saveBrowserCapturedScreen(
+        source: Bitmap,
+        packageName: String,
+        accessibilityRegionCount: Int
+    ) {
+        saveAnnotated(
+            fileStem = "00-browser-1-captured-screen-NOT-MODEL-INPUT",
+            source = source,
+            lines = listOf(
+                "CHROME CAPTURED SCREEN: ${source.width}x${source.height}",
+                "package: $packageName",
+                "accessibility media candidates received: $accessibilityRegionCount",
+                "no crop or classifier has been applied"
+            )
+        )
+    }
+
+    @Synchronized
+    fun saveBrowserAccessibilityRegionMap(source: Bitmap, regions: List<DetectionRegion>) {
+        saveRegionMap(
+            source = source,
+            regions = regions,
+            fileStem = "00-browser-2-accessibility-media-candidates-NOT-MODEL-INPUT",
+            heading = "CHROME ACCESSIBILITY MEDIA CANDIDATES: ${regions.size}",
+            legend = "cyan rectangle = media bounds received or inferred from Chrome nodes",
+            boxColor = Color.rgb(0, 210, 255)
+        )
+    }
+
+    @Synchronized
+    fun saveFinalRegionMap(source: Bitmap, regions: List<DetectionRegion>) = saveRegionMap(
+        source = source,
+        regions = regions,
+        fileStem = "00-final-model-regions-NOT-MODEL-INPUT",
+        heading = "FINAL LOCALIZED REGIONS: ${regions.size}",
+        legend = "green rectangle #N = NN-localized.jpg",
+        boxColor = Color.rgb(0, 255, 80)
+    )
+
+    private fun saveRegionMap(
+        source: Bitmap,
+        regions: List<DetectionRegion>,
+        fileStem: String,
+        heading: String,
+        legend: String,
+        boxColor: Int
+    ) {
         val mapped = source.copy(Bitmap.Config.ARGB_8888, true)
             ?: return
         try {
             val canvas = Canvas(mapped)
             val scale = max(1f, source.width / 1080f)
             val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.rgb(0, 255, 80)
+                color = boxColor
                 style = Paint.Style.STROKE
                 strokeWidth = 5f * scale
             }
@@ -124,12 +175,9 @@ internal class ModelAnalysisDebugSession(private val captureDirectory: File) {
                 canvas.drawText(label, bounds.left + 6f, labelTop + labelPaint.textSize, labelPaint)
             }
             saveAnnotated(
-                fileStem = "00-final-model-regions-NOT-MODEL-INPUT",
+                fileStem = fileStem,
                 source = mapped,
-                lines = listOf(
-                    "FINAL LOCALIZED REGIONS: ${regions.size}",
-                    "green rectangle #N = NN-localized.jpg"
-                )
+                lines = listOf(heading, legend)
             )
         } finally {
             mapped.recycle()
@@ -156,13 +204,18 @@ internal class ModelAnalysisDebugSession(private val captureDirectory: File) {
     }
 
     @Synchronized
-    fun saveVerifierInput(bitmap: Bitmap, result: VerificationResult, details: String? = null) {
+    fun saveVerifierInput(
+        fileStem: String = "99-verifier",
+        bitmap: Bitmap,
+        result: VerificationResult,
+        details: String? = null
+    ) {
         val lines = buildList {
             add("VERIFIER  |  NSFW ${score(result.nsfwScore)}   SFW ${score(1f - result.nsfwScore)}")
             details?.lines()?.forEach(::add)
             add("actual verifier tensor image: ${bitmap.width}x${bitmap.height}")
         }
-        saveAnnotated("99-verifier", bitmap, lines)
+        saveAnnotated(fileStem, bitmap, lines)
     }
 
     private fun saveAnnotated(fileStem: String, source: Bitmap, lines: List<String>) {

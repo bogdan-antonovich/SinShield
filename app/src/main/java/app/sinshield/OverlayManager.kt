@@ -64,11 +64,23 @@ internal class OverlayManager(
         fun onGoBack()
     }
 
+    /** Actions for a model-detected unsafe webpage shown in the standard sexual-content shield. */
+    interface BrowserContentBlockActions : SiteBlockActions {
+        fun onCooldownStarted()
+        fun onDismiss(incident: IncidentId)
+        fun onFeedback(
+            incident: IncidentId,
+            disturbing: Boolean,
+            onComplete: (Boolean) -> Unit
+        )
+    }
+
     private val localizedOverlays = mutableListOf<LocalizedOverlay>()
     private var appBlockingOverlay: AppBlockingOverlay? = null
     private var cooldownView: View? = null
     private var cooldownGeneration = 0L
     private var siteBlockingOverlay: SiteBlockingOverlay? = null
+    private var browserContentBlockingOverlay: BrowserContentBlockingOverlay? = null
     private var previewBlockingView: View? = null
     val hasPreviewBlock: Boolean
         get() = previewBlockingView != null
@@ -89,6 +101,9 @@ internal class OverlayManager(
     /** Read-only handle so the event loop can reconcile the site block against the foreground. */
     val siteOverlay: SiteBlockingOverlay? get() = siteBlockingOverlay
 
+    val browserContentOverlay: BrowserContentBlockingOverlay?
+        get() = browserContentBlockingOverlay
+
     val hasLocalizedOverlays: Boolean get() = localizedOverlays.isNotEmpty()
 
     /** While true, the scanner leaves the covered screen alone and lets the user pause. */
@@ -105,12 +120,14 @@ internal class OverlayManager(
     fun hideForLegacyCapture(): List<View> = buildList {
         addAll(localizedOverlays.map(LocalizedOverlay::view))
         appBlockingOverlay?.view?.let(::add)
+        browserContentBlockingOverlay?.view?.let(::add)
         previewBlockingView?.let(::add)
     }.onEach { it.visibility = View.INVISIBLE }
 
     fun restoreLegacyCaptureOverlays(views: List<View>) {
         views.forEach { view ->
             if (localizedOverlays.any { it.view === view } || appBlockingOverlay?.view === view ||
+                browserContentBlockingOverlay?.view === view ||
                 previewBlockingView === view
             ) {
                 view.visibility = View.VISIBLE
@@ -129,6 +146,7 @@ internal class OverlayManager(
             Log.w(TAG, "Full-screen block suppressed; overlay permission is not granted")
             return
         }
+        clearBrowserContentBlock()
         val existing = appBlockingOverlay
         // An overlay already covering a different app cannot be reused: its click handlers are
         // bound to that app's navigation, and reusing it would scroll or close the wrong one.
@@ -137,7 +155,11 @@ internal class OverlayManager(
             existing.incident = incident
             existing.mode = mode
             configureBlockingView(app, existing.view, verdict, mode, resetFeedback = incidentChanged)
-            restartRecoveryCooldown(existing.view, actions)
+            restartRecoveryCooldown(
+                existing.view,
+                actions::onCooldownStarted,
+                R.id.recovery_actions
+            )
             return
         }
         if (existing != null) removeAppBlockingOverlay()
@@ -190,7 +212,7 @@ internal class OverlayManager(
         armMaximumLifetime(view) {
             dismissAppBlockingOverlay(view, incident, actions)
         }
-        restartRecoveryCooldown(view, actions)
+        restartRecoveryCooldown(view, actions::onCooldownStarted, R.id.recovery_actions)
         Log.i(
             TAG,
             "Full-screen block shown; app=${app.packageName} verdict=$verdict " +
@@ -221,28 +243,31 @@ internal class OverlayManager(
     }
 
     /** Keep normal recovery choices out of sight so the block creates a deliberate pause. */
-    private fun hideRecoveryActions(view: View) {
-        view.findViewById<View>(R.id.recovery_actions).visibility = View.INVISIBLE
+    private fun hideRecoveryActions(view: View, actionContainerId: Int) {
+        view.findViewById<View>(actionContainerId).visibility = View.INVISIBLE
         updateCooldownText(view, RECOVERY_ACTION_REST_SECONDS)
     }
 
     private fun restartRecoveryCooldown(
         view: View,
-        actions: AppBlockActions
+        onCooldownStarted: () -> Unit,
+        actionContainerId: Int
     ) {
-        hideRecoveryActions(view)
+        hideRecoveryActions(view, actionContainerId)
         cooldownView = view
         val generation = ++cooldownGeneration
         val cooldownEndsAt = SystemClock.elapsedRealtime() + RECOVERY_ACTION_REST_MS
-        actions.onCooldownStarted()
+        onCooldownStarted()
 
         fun tick() {
-            if (appBlockingOverlay?.view !== view || generation != cooldownGeneration) return
+            val activeBlockingView = appBlockingOverlay?.view
+                ?: browserContentBlockingOverlay?.view
+            if (activeBlockingView !== view || generation != cooldownGeneration) return
             val remainingMs = cooldownEndsAt - SystemClock.elapsedRealtime()
             if (remainingMs <= 0L) {
                 cooldownView = null
                 view.findViewById<TextView>(R.id.cooldown_timer).visibility = View.INVISIBLE
-                view.findViewById<View>(R.id.recovery_actions).visibility = View.VISIBLE
+                view.findViewById<View>(actionContainerId).visibility = View.VISIBLE
                 return
             }
 
@@ -356,11 +381,126 @@ internal class OverlayManager(
         Log.i(TAG, "Removed full-screen block for ${overlay.app.packageName}")
     }
 
+    fun showBrowserContentBlock(
+        packageName: String,
+        incident: IncidentId,
+        verdict: ContentVerdict,
+        actions: BrowserContentBlockActions
+    ) {
+        if (!canShowBlockingOverlays()) {
+            Log.w(TAG, "Browser content block suppressed; overlay permission is not granted")
+            return
+        }
+        val existing = browserContentBlockingOverlay
+        if (existing != null && existing.packageName == packageName) {
+            val incidentChanged = existing.incident != incident
+            existing.incident = incident
+            configureBrowserContentBlockingView(
+                existing.view,
+                resetFeedback = incidentChanged
+            )
+            restartRecoveryCooldown(
+                existing.view,
+                actions::onCooldownStarted,
+                R.id.browser_recovery_actions
+            )
+            return
+        }
+        if (existing != null) clearBrowserContentBlock()
+        removeAppBlockingOverlay()
+        clearSiteBlockingOverlay()
+        clearLocalizedOverlaysOnly()
+
+        val view = View.inflate(context, R.layout.layout_app_screen_block, null)
+        configureBrowserContentBlockingView(view, resetFeedback = true)
+        view.findViewById<Button>(R.id.browser_open_safe_page).setOnClickListener {
+            showRecoveryStatus(view)
+            actions.onOpenSafePage()
+        }
+        view.findViewById<Button>(R.id.browser_go_back).setOnClickListener {
+            showRecoveryStatus(view)
+            actions.onGoBack()
+        }
+        view.findViewById<View>(R.id.dismiss_overlay).setOnClickListener {
+            dismissBrowserContentBlock(view, incident, actions)
+        }
+        if (GlobalDebugMode.ENABLED) {
+            view.findViewById<Button>(R.id.feedback_yes).setOnClickListener {
+                currentBrowserIncident(view, incident)?.let { active ->
+                    actions.onFeedback(active, true) { }
+                    showFeedbackThanks(view)
+                }
+            }
+            view.findViewById<Button>(R.id.feedback_no).setOnClickListener {
+                currentBrowserIncident(view, incident)?.let { active ->
+                    actions.onFeedback(active, false) { saved ->
+                        val message = if (saved) {
+                            R.string.false_positive_saved
+                        } else {
+                            R.string.false_positive_save_failed
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        if (!addBlockingOverlay(view, appBlockingLayoutParams(touchable = true))) return
+        browserContentBlockingOverlay = BrowserContentBlockingOverlay(packageName, view, incident)
+        updateFailOpenWatchdog()
+        armDismissButtonReveal(view)
+        armMaximumLifetime(view) {
+            dismissBrowserContentBlock(view, incident, actions)
+        }
+        restartRecoveryCooldown(
+            view,
+            actions::onCooldownStarted,
+            R.id.browser_recovery_actions
+        )
+        Log.i(TAG, "Full-screen browser content block shown; package=$packageName verdict=$verdict")
+    }
+
+    private fun configureBrowserContentBlockingView(view: View, resetFeedback: Boolean) {
+        view.findViewById<TextView>(R.id.blocked_reason).setText(R.string.slow_down_message)
+        view.findViewById<TextView>(R.id.blocked_explanation)
+            .setText(R.string.browser_content_blocked_explanation)
+        view.findViewById<View>(R.id.recovery_actions).visibility = View.GONE
+        view.findViewById<View>(R.id.browser_recovery_actions).visibility = View.VISIBLE
+        configureDebugControls(view, resetFeedback)
+    }
+
+    private fun currentBrowserIncident(view: View, fallback: IncidentId): IncidentId? {
+        val overlay = browserContentBlockingOverlay
+        return if (overlay == null || overlay.view === view) overlay?.incident ?: fallback else null
+    }
+
+    private fun dismissBrowserContentBlock(
+        view: View,
+        fallback: IncidentId,
+        actions: BrowserContentBlockActions
+    ) {
+        val incident = currentBrowserIncident(view, fallback) ?: return
+        clearBrowserContentBlock()
+        actions.onDismiss(incident)
+    }
+
+    fun clearBrowserContentBlock() {
+        val overlay = browserContentBlockingOverlay ?: return
+        browserContentBlockingOverlay = null
+        if (cooldownView === overlay.view) cooldownView = null
+        cancelDismissButtonReveal(overlay.view)
+        cancelMaximumLifetime(overlay.view)
+        removeViewOrTerminate(overlay.view, "browser content block")
+        updateFailOpenWatchdog()
+        Log.i(TAG, "Removed browser content block for ${overlay.packageName}")
+    }
+
     fun showSiteBlock(packageName: String, domain: String, actions: SiteBlockActions) {
         if (!canShowBlockingOverlays()) {
             Log.w(TAG, "Website block suppressed; overlay permission is not granted")
             return
         }
+        clearBrowserContentBlock()
         clearSiteBlockingOverlay()
         val view = View.inflate(context, R.layout.layout_site_block, null)
         view.findViewById<Button>(R.id.open_safe_page).setOnClickListener {
@@ -1012,12 +1152,14 @@ internal class OverlayManager(
 
     private fun isTrackedBlockingOverlay(view: View): Boolean =
         appBlockingOverlay?.view === view ||
+            browserContentBlockingOverlay?.view === view ||
             siteBlockingOverlay?.view === view ||
             previewBlockingView === view
 
     private fun updateFailOpenWatchdog() {
         failOpenWatchdog.setBlockingOverlayActive(
-            appBlockingOverlay != null || siteBlockingOverlay != null || previewBlockingView != null
+            appBlockingOverlay != null || browserContentBlockingOverlay != null ||
+                siteBlockingOverlay != null || previewBlockingView != null
         )
     }
 
@@ -1030,6 +1172,7 @@ internal class OverlayManager(
     }
 
     fun shutdown() {
+        clearBrowserContentBlock()
         dismissButtonReveals.values.forEach(mainHandler::removeCallbacks)
         dismissButtonReveals.clear()
         blockingOverlayExpirations.values.forEach(mainHandler::removeCallbacks)
