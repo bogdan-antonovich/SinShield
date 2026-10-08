@@ -36,8 +36,8 @@ import BaseContainer from '@/common/components/BaseContainer.vue'
 
       <div class="order-2 flex justify-center lg:justify-end">
         <img
-          src="/images/SinShieldPreview.png"
-          alt="SinShield protection status and permissions on a Google Pixel 10 Pro"
+          src="/images/Screenshot_20261009_005038.png"
+          alt="SinShield protection status, streak, and permissions on an Android phone"
           class="aspect-[1410/2968] w-[250px] object-contain drop-shadow-2xl sm:w-[290px] lg:w-[320px]"
           decoding="async"
         />
