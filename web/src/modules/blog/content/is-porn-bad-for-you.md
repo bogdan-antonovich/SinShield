@@ -14,6 +14,8 @@ Porn can be bad for you when it repeatedly takes more time than you intended, be
 
 The evidence is strongest when it concerns **problematic pornography use** rather than exposure alone. Frequency, context, motivation, secrecy, personal values, and consequences all matter, which means your own pattern should be judged by what it is doing in your life rather than by an internet slogan.
 
+If your question is specifically whether pornography is sinful in Christian teaching, read the separate biblical explanation of [why pornography is a sin](/blog/is-pornography-a-sin); moral judgment and clinical harm answer different questions and should not be treated as interchangeable.
+
 > [!NOTE] The direct answer
 > Porn is harmful when the pattern reduces your ability to choose, displaces important parts of life, damages trust, or continues despite consequences; ordinary use and problematic use should not be treated as identical.
 

@@ -23,6 +23,8 @@ The practical way to quit porn is to change the sequence around it: identify the
 
 For one person, the boundary may be no pornographic websites or videos; for another, it may also include explicit accounts, saved material, or the social feeds that repeatedly begin the same sequence. Write the rule in plain language and choose it because it protects something you value—your time, attention, relationship, sleep, or sense of control—not because you need a harsher label for yourself.
 
+For Christians whose boundary begins with obedience to God, our article on [what the Bible says about pornography as sin](/blog/is-pornography-a-sin) addresses that moral question directly; this guide stays focused on the practical work of changing the pattern.
+
 It also helps to keep personal goals separate from diagnosis. Wanting to stop does not automatically mean you have an addiction or a mental disorder, while frequent use alone does not settle the question either; the World Health Organization's [ICD-11 clinical guidance](https://iris.who.int/bitstream/handle/10665/375767/9789240077263-eng.pdf?sequence=1) describes compulsive sexual behaviour disorder in terms of a persistent failure to control repetitive sexual behavior that causes marked distress or impairment, and it specifies that distress based only on moral judgment is not enough for the diagnosis.
 
 You do not need a diagnosis before changing a behavior that no longer fits your life. You do deserve a proper assessment, however, if the behavior feels persistently out of control, is escalating, or is interfering with work, school, relationships, finances, sleep, or safety.
