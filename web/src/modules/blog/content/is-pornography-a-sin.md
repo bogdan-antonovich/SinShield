@@ -17,7 +17,7 @@ That order matters. Research can describe patterns and consequences, while perso
 > [!NOTE] The direct answer
 > Deliberately using pornography for sexual arousal is sin because it obtains sexual gratification from a display made available for the viewer's use—the same customer-side logic Scripture condemns in prostitution—and because it feeds impurity and evil desire; accidental exposure is not the same choice, and the sacrifice of Jesus is sufficient for the person who turns to Him.
 
-## What makes pornography a sin
+## What is a sin
 
 Sin is first an offense against God. The apostle John writes that “sin is lawlessness” ([1 John 3:4](https://www.biblegateway.com/passage/?search=1%20John%203%3A4&version=ESV)), which means that an act is sinful because it opposes God's rule rather than because enough people disapprove of it or because every consequence can be measured.
 
