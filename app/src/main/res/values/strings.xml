@@ -1,10 +1,14 @@
 <resources>
     <string name="app_name">SinShield</string>
     <string name="accessibility_service_description">SinShield uses the Accessibility service to read the content of the screen so it can detect explicit images and cover them the moment they appear. Screen content is analysed on your device and is never collected, stored, or sent anywhere.</string>
-    <string name="accessibility_disclosure_title">Before you turn on the shield</string>
-    <string name="accessibility_disclosure_body">SinShield needs Android\'s Accessibility service to protect you. Here is exactly what that means:\n\n• SinShield reads what is on your screen so it can find explicit images and cover them instantly.\n• All of this analysis happens on your device using on-device models.\n• SinShield does not collect, store, or transmit the content of your screen, and it does not share it with anyone.\n\nOn the next screen, Android will ask you to enable SinShield. You can turn it off again at any time in Accessibility settings.</string>
-    <string name="accessibility_disclosure_accept">I understand, continue</string>
+    <string name="accessibility_disclosure_title">Allow Accessibility access?</string>
+    <string name="accessibility_disclosure_body">SinShield uses Android\'s Accessibility service to access visible screen content, including text and images, and to take screenshots. It uses this access to detect explicit content in supported apps and cover it immediately.\n\nAll screen analysis happens on your device. SinShield does not store, transmit, or share your screen content or screenshots.\n\nWhen you choose an action on a SinShield warning, the service may perform that action for you, such as moving past the content, going back, or closing the affected app. It does not use Accessibility for unrelated actions.\n\nIf you agree, Android will open Accessibility settings so you can enable SinShield. You can disable it again at any time.</string>
+    <string name="accessibility_disclosure_accept">Agree and continue</string>
     <string name="accessibility_disclosure_cancel">Not now</string>
+    <string name="vpn_disclosure_title">Allow Website Protection?</string>
+    <string name="vpn_disclosure_body">SinShield uses Android\'s VPN service to access domain names requested by apps and browsers. It checks each domain against an adult-content blocklist stored on your device so matching websites can be blocked before they load.\n\nBlocked requests stay on your device. Allowed requests are forwarded to your network\'s DNS resolver, or to a fallback public DNS resolver when necessary, so the domain can be resolved. SinShield does not route or decrypt your general web traffic, inspect website contents, store your browsing history, or use this information for advertising.\n\nIf you agree, Android will ask for permission to create the local VPN connection. You can turn Website Protection off again at any time.</string>
+    <string name="vpn_disclosure_accept">Agree and continue</string>
+    <string name="vpn_disclosure_cancel">Not now</string>
     <string name="end_setup_guide">End setup guide</string>
     <string name="privacy_policy_link">Privacy Policy</string>
     <string name="privacy_policy_url" translatable="false">https://sinshield.app/privacy-policy</string>

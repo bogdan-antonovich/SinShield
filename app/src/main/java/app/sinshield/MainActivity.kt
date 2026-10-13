@@ -340,6 +340,8 @@ fun MainScreen(
     var domainError by remember { mutableStateOf<String?>(null) }
     var details by remember { mutableStateOf<SettingDetails?>(null) }
     var setupGuide by remember { mutableStateOf<SetupGuide?>(null) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showVpnDisclosure by remember { mutableStateOf(false) }
     var debugPhotoDumps by remember { mutableStateOf(DebugSettings.photoDumps(context)) }
     var debugOverlayFeedback by remember { mutableStateOf(DebugSettings.overlayFeedback(context)) }
     var debugLastShutdown by remember { mutableStateOf(DebugSettings.lastShutdown(context)) }
@@ -533,6 +535,85 @@ fun MainScreen(
         )
     }
 
+    val requestAccessibilitySettings = {
+        if (accessibility) {
+            openAccessibilitySettings(context)
+        } else {
+            showAccessibilityDisclosure = true
+        }
+    }
+
+    val requestWebsiteProtection = {
+        if (!vpn) showVpnDisclosure = true
+    }
+
+    if (showAccessibilityDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityDisclosure = false },
+            title = {
+                Text(
+                    stringResource(R.string.accessibility_disclosure_title),
+                    color = Ink
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.accessibility_disclosure_body),
+                    color = MutedInk
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAccessibilityDisclosure = false
+                        openAccessibilitySettings(context)
+                    }
+                ) {
+                    Text(stringResource(R.string.accessibility_disclosure_accept))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityDisclosure = false }) {
+                    Text(stringResource(R.string.accessibility_disclosure_cancel))
+                }
+            }
+        )
+    }
+
+    if (showVpnDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showVpnDisclosure = false },
+            title = {
+                Text(
+                    stringResource(R.string.vpn_disclosure_title),
+                    color = Ink
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.vpn_disclosure_body),
+                    color = MutedInk
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showVpnDisclosure = false
+                        VpnService.prepare(context)?.let(vpnLauncher::launch)
+                            ?: AdultContentVpnService.start(context)
+                    }
+                ) {
+                    Text(stringResource(R.string.vpn_disclosure_accept))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVpnDisclosure = false }) {
+                    Text(stringResource(R.string.vpn_disclosure_cancel))
+                }
+            }
+        )
+    }
+
     setupGuide?.let { guide ->
         val enabled = when (guide) {
             SetupGuide.ACCESSIBILITY -> accessibility
@@ -544,7 +625,7 @@ fun MainScreen(
         }
         val openSettings = {
             when (guide) {
-                SetupGuide.ACCESSIBILITY -> openAccessibilitySettings(context)
+                SetupGuide.ACCESSIBILITY -> requestAccessibilitySettings()
                 SetupGuide.OVERLAY -> openOverlaySettings(context)
                 SetupGuide.BATTERY -> batterySettingsLauncher.launch(batterySettingsIntent(context))
                 SetupGuide.DEVICE_BACKGROUND -> {
@@ -641,12 +722,9 @@ fun MainScreen(
 
     val openCurrentPreviewPermission = {
         when (previewStage) {
-            ProtectionPreviewStage.ACCESSIBILITY -> openAccessibilitySettings(context)
+            ProtectionPreviewStage.ACCESSIBILITY -> requestAccessibilitySettings()
             ProtectionPreviewStage.OVERLAY -> openOverlaySettings(context)
-            ProtectionPreviewStage.VPN -> {
-                VpnService.prepare(context)?.let(vpnLauncher::launch)
-                    ?: AdultContentVpnService.start(context)
-            }
+            ProtectionPreviewStage.VPN -> requestWebsiteProtection()
             else -> Unit
         }
     }
@@ -950,12 +1028,7 @@ fun MainScreen(
             alwaysOnVpn = alwaysOnVpn,
             previewStage = previewStage.takeIf { permissionPreviewActive },
             onPreviewTargetBounds = { stage, bounds -> previewTarget = stage to bounds },
-            onAccessibility = {
-                if (previewStage == ProtectionPreviewStage.ACCESSIBILITY) {
-                    openCurrentPreviewPermission()
-                } else if (accessibility) openAccessibilitySettings(context)
-                else setupGuide = SetupGuide.ACCESSIBILITY
-            },
+            onAccessibility = requestAccessibilitySettings,
             onOverlay = {
                 if (previewStage == ProtectionPreviewStage.OVERLAY) {
                     openCurrentPreviewPermission()
@@ -966,8 +1039,7 @@ fun MainScreen(
                 if (previewStage == ProtectionPreviewStage.VPN) {
                     openCurrentPreviewPermission()
                 } else if (enable) {
-                    VpnService.prepare(context)?.let(vpnLauncher::launch)
-                        ?: AdultContentVpnService.start(context)
+                    requestWebsiteProtection()
                 } else if (alwaysOnVpn) {
                     openVpnSettings(context)
                 } else {
