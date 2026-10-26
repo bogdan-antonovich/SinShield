@@ -83,11 +83,40 @@ internal object StreakTracker {
         return StreakSnapshot(startedAt, dates)
     }
 
+    fun setStartDateForDebug(
+        context: Context,
+        startDate: LocalDate,
+        nowMillis: Long = System.currentTimeMillis(),
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Boolean {
+        if (!GlobalDebugMode.ENABLED || startDate.isAfter(localDate(nowMillis, zoneId))) {
+            return false
+        }
+
+        val preferences = preferences(context)
+        val referenceMillis = preferences.getLong(STARTED_AT, 0L).takeIf { it > 0L } ?: nowMillis
+        val startedAtMillis = millisWithDate(referenceMillis, startDate, zoneId)
+            .coerceAtMost(nowMillis)
+        if (startedAtMillis <= 0L) return false
+
+        preferences.edit { putLong(STARTED_AT, startedAtMillis) }
+        return true
+    }
+
     internal fun hasGracePeriodExpired(unprotectedSince: Long, nowMillis: Long): Boolean =
         nowMillis - unprotectedSince >= GRACE_PERIOD_MILLIS
 
     internal fun localDate(epochMillis: Long, zoneId: ZoneId = ZoneId.systemDefault()): LocalDate =
         Instant.ofEpochMilli(epochMillis).atZone(zoneId).toLocalDate()
+
+    internal fun millisWithDate(
+        epochMillis: Long,
+        date: LocalDate,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        val time = Instant.ofEpochMilli(epochMillis).atZone(zoneId).toLocalTime()
+        return date.atTime(time).atZone(zoneId).toInstant().toEpochMilli()
+    }
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

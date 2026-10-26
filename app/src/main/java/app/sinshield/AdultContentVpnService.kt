@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
-import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -37,8 +36,18 @@ class AdultContentVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private var worker: Thread? = null
     @Volatile private var matcher = AdultDomainMatcher.empty()
-    @Volatile private var upstreamNetwork: Network? = null
-    private var upstreamServers: List<InetAddress> = emptyList()
+    private val upstreamServers by lazy {
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+        DnsUpstreamProvider(
+            networkDnsServers = {
+                connectivity.getLinkProperties(connectivity.activeNetwork)
+                    ?.dnsServers
+                    .orEmpty()
+            },
+            fallbackDnsServers = FALLBACK_DNS.map(InetAddress::getByName),
+            excludedAddress = VPN_DNS_ADDRESS
+        )
+    }
     private val packetIdentification = AtomicInteger(1)
     private val recentlyReported = LinkedHashMap<String, Long>()
     private val handler = Handler(Looper.getMainLooper())
@@ -117,20 +126,6 @@ class AdultContentVpnService : VpnService() {
     }
 
     private fun establishTunnel() {
-        val connectivity = getSystemService(ConnectivityManager::class.java)
-        val underlyingNetwork = connectivity.activeNetwork
-        upstreamNetwork = underlyingNetwork
-        // Reuse the real network's resolvers so answers match what the user would get without the
-        // VPN. Exclude our own virtual DNS address so a forwarded query can never loop back in.
-        val networkDns = connectivity.getLinkProperties(underlyingNetwork)
-            ?.dnsServers
-            .orEmpty()
-            .filterIsInstance<Inet4Address>()
-            .filterNot { it.hostAddress == VPN_DNS_ADDRESS }
-        // Append public resolvers as a fallback for networks that expose no usable DNS server.
-        upstreamServers = (networkDns + FALLBACK_DNS.map(InetAddress::getByName))
-            .distinctBy(InetAddress::getHostAddress)
-
         // Split tunnel: route ONLY traffic to the virtual DNS address into the tunnel. Everything
         // else keeps its normal path, so this captures classic DNS without touching web traffic.
         val builder = Builder()
@@ -140,7 +135,6 @@ class AdultContentVpnService : VpnService() {
             .addDnsServer(VPN_DNS_ADDRESS)
             .addRoute(VPN_DNS_ADDRESS, 32)
             .setBlocking(true)
-        underlyingNetwork?.let { builder.setUnderlyingNetworks(arrayOf(it)) }
         // Keep SinSheld's own traffic out of the tunnel so forwarding sockets reach the network
         // directly rather than recursing through this service.
         runCatching { builder.addDisallowedApplication(packageName) }
@@ -277,14 +271,13 @@ class AdultContentVpnService : VpnService() {
     }
 
     private fun forward(query: ByteArray): ByteArray? {
-        for (server in upstreamServers) {
+        for (server in upstreamServers.current()) {
             try {
                 DatagramSocket().use { socket ->
                     if (!protect(socket)) {
                         Log.w(TAG, "Could not exempt an upstream DNS socket from the VPN")
                         return@use
                     }
-                    upstreamNetwork?.bindSocket(socket)
 
                     socket.soTimeout = DNS_TIMEOUT_MS
                     socket.send(
@@ -501,6 +494,19 @@ class AdultContentVpnService : VpnService() {
             )
         }
     }
+}
+
+internal class DnsUpstreamProvider(
+    private val networkDnsServers: () -> List<InetAddress>,
+    private val fallbackDnsServers: List<InetAddress>,
+    private val excludedAddress: String
+) {
+    /** Resolve on every call so a Wi-Fi/mobile handoff cannot leave the VPN on a stale network. */
+    fun current(): List<InetAddress> =
+        (networkDnsServers()
+            .filterIsInstance<Inet4Address>()
+            .filterNot { it.hostAddress == excludedAddress } + fallbackDnsServers)
+            .distinctBy(InetAddress::getHostAddress)
 }
 
 internal object VpnReconnectPolicy {

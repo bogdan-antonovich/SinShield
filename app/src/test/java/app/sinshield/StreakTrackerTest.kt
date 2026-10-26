@@ -49,4 +49,21 @@ class StreakTrackerTest {
             StreakTracker.localDate(instant, ZoneId.of("Asia/Tbilisi"))
         )
     }
+
+    @Test
+    fun changingStartDateKeepsTheOriginalLocalTime() {
+        val zone = ZoneId.of("Asia/Tbilisi")
+        val original = java.time.Instant.parse("2026-10-19T10:15:30Z").toEpochMilli()
+
+        val changed = StreakTracker.millisWithDate(
+            original,
+            LocalDate.of(2026, 10, 12),
+            zone
+        )
+
+        assertEquals(
+            java.time.Instant.parse("2026-10-12T10:15:30Z").toEpochMilli(),
+            changed
+        )
+    }
 }

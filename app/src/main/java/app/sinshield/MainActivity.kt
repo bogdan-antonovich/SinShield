@@ -2,6 +2,7 @@ package app.sinshield
 
 import android.Manifest
 import android.app.Activity
+import android.app.DatePickerDialog
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -99,6 +100,8 @@ import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.install.model.UpdateAvailability
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -1212,6 +1215,30 @@ fun MainScreen(
                     fontSize = 14.sp,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
+                DebugActionRow(
+                    title = "Streak start date",
+                    summary = streakSnapshot.startedAtMillis?.let {
+                        StreakTracker.localDate(it).format(
+                            DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+                        )
+                    } ?: "Not started · choose a date to start it",
+                    actionLabel = "Change",
+                    iconRes = R.drawable.ic_streak,
+                    onClick = {
+                        showStreakStartDatePicker(
+                            context = context,
+                            startedAtMillis = streakSnapshot.startedAtMillis
+                        ) { selectedDate ->
+                            if (StreakTracker.setStartDateForDebug(context, selectedDate)) {
+                                streakSnapshot = StreakTracker.updateProtection(
+                                    context,
+                                    ProtectionHealthMonitor.isProtectionOperational(context)
+                                )
+                            }
+                        }
+                    }
+                )
+                AppDivider()
                 SettingsRow(
                     "Photo dumps",
                     "Save captured screens, media-region maps, and model crops to the app's Pictures folder",
@@ -3357,6 +3384,54 @@ private fun SettingsRow(
         }
         AppSwitch(checked, onChecked = onChecked)
     }
+}
+
+@Composable
+private fun DebugActionRow(
+    title: String,
+    summary: String,
+    actionLabel: String,
+    iconRes: Int,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = Ink,
+            modifier = Modifier.size(30.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(summary, color = MutedInk, fontSize = 14.sp, lineHeight = 18.sp)
+        }
+        OutlinedButton(onClick = onClick) {
+            Text(actionLabel)
+        }
+    }
+}
+
+private fun showStreakStartDatePicker(
+    context: Context,
+    startedAtMillis: Long?,
+    onDateSelected: (LocalDate) -> Unit
+) {
+    val initialDate = startedAtMillis?.let { StreakTracker.localDate(it) } ?: LocalDate.now()
+    DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            onDateSelected(LocalDate.of(year, month + 1, dayOfMonth))
+        },
+        initialDate.year,
+        initialDate.monthValue - 1,
+        initialDate.dayOfMonth
+    ).apply {
+        datePicker.maxDate = System.currentTimeMillis()
+    }.show()
 }
 
 @Composable
